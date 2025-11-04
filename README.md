@@ -1,93 +1,288 @@
-# ind-appointments
+# IND Appointments Tracker
 
+A Next.js application that tracks available IND (Immigration and Naturalisation Service) appointments in the Netherlands and sends notifications to users when new appointments become available.
 
+## Features
 
-## Getting started
+- **Real-time Appointment Tracking**: Automatically checks the IND API every 15 minutes for new appointments
+- **Email Notifications**: Users receive email alerts when appointments matching their preferences become available
+- **User Dashboard**: View all available appointments with filtering by type, location, and date
+- **Customizable Preferences**: Set up notifications for specific appointment types, locations, and timeframes
+- **User Authentication**: Secure JWT-based authentication system
+- **Admin Panel**: Trigger manual appointment checks
+- **Responsive Design**: Works on desktop and mobile devices
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Tech Stack
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.zenterprise.org/rxwatcher/ind-appointments.git
-git branch -M main
-git push -uf origin main
-```
-
-## Integrate with your tools
-
-- [ ] [Set up project integrations](https://gitlab.zenterprise.org/rxwatcher/ind-appointments/-/settings/integrations)
-
-## Collaborate with your team
-
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+- **Frontend**: Next.js 15, React 19, TailwindCSS
+- **Backend**: Next.js API Routes, Node.js
+- **Database**: MySQL/MariaDB
+- **Email**: Nodemailer with SMTP
+- **Scheduling**: node-cron
+- **Authentication**: JWT, bcrypt
 
 ## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+
+### Prerequisites
+
+- Node.js 20+
+- MySQL or MariaDB
+- SMTP email account (Gmail, SendGrid, etc.)
+
+### Setup Steps
+
+1. **Clone and navigate to the project**
+   ```bash
+   cd /opt/ind/ind-appointments
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   nano .env
+   ```
+
+   Update the following variables:
+   ```env
+   # Database
+   DB_HOST=localhost
+   DB_USER=your_db_user
+   DB_PASSWORD=your_db_password
+   DB_NAME=ind_appointments
+
+   # Security (generate secure random strings!)
+   JWT_SECRET=your-super-secure-jwt-secret-min-32-characters
+   SESSION_SECRET=your-super-secure-session-secret
+
+   # Email (SMTP)
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=your-email@gmail.com
+   SMTP_PASSWORD=your-app-password
+   FROM_EMAIL=noreply@yourapp.com
+   FROM_NAME=IND Appointments
+
+   # Application
+   BASE_URL=http://localhost:3000
+   PORT=3000
+
+   # IND API
+   IND_CHECK_INTERVAL_MINUTES=15
+   ```
+
+4. **Set up the database**
+   ```bash
+   chmod +x scripts/setup-database.sh
+   ./scripts/setup-database.sh
+   ```
+
+   Or manually:
+   ```bash
+   mysql -u your_user -p < database/schema.sql
+   ```
+
+5. **Start the development server**
+   ```bash
+   npm run dev
+   ```
+
+   The application will be available at http://localhost:3000
+
+## Production Deployment
+
+1. **Build the application**
+   ```bash
+   npm run build
+   ```
+
+2. **Set up as a systemd service**
+   ```bash
+   sudo nano /etc/systemd/system/ind-appointments.service
+   ```
+
+   Add the following:
+   ```ini
+   [Unit]
+   Description=IND Appointments Tracker
+   After=network.target mysql.service
+
+   [Service]
+   Type=simple
+   User=root
+   WorkingDirectory=/opt/ind/ind-appointments
+   ExecStart=/usr/bin/node /opt/ind/ind-appointments/server.js
+   Restart=always
+   RestartSec=10
+   StandardOutput=journal
+   StandardError=journal
+   Environment="NODE_ENV=production"
+   Environment="PORT=3000"
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+3. **Start the service**
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl start ind-appointments
+   sudo systemctl enable ind-appointments
+   sudo systemctl status ind-appointments
+   ```
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### For Users
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+1. **Sign up** for an account
+2. **Set up notification preferences**:
+   - Choose appointment type (Biometric, Document Pickup, etc.)
+   - Select location (Amsterdam, Den Haag, etc.)
+   - Set number of persons
+   - Define how many days ahead to monitor
+3. **Receive email notifications** when new appointments become available
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+### For Administrators
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+- Manually trigger appointment checks via the API:
+  ```bash
+  curl -X POST http://localhost:3000/api/appointments \
+    -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
+  ```
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+## API Endpoints
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+### Public Endpoints
+- `GET /api/appointments` - List available appointments
+- `GET /api/health` - Health check
+- `POST /api/login` - User login
+- `POST /api/signup` - User registration
+
+### Protected Endpoints (require authentication)
+- `GET /api/preferences` - Get user notification preferences
+- `POST /api/preferences` - Add/update notification preference
+- `DELETE /api/preferences?id=X` - Delete notification preference
+
+### Admin Endpoints (require admin role)
+- `POST /api/appointments` - Manually trigger appointment check
+
+## Database Schema
+
+The application uses the following main tables:
+
+- `users` - User accounts
+- `ind_appointments` - Stored appointments from IND API
+- `notification_preferences` - User notification settings
+- `notification_log` - History of sent notifications
+- `cron_job_log` - Cron job execution history
+
+## Appointment Types
+
+- **BIO** - Biometric appointments
+- **DOC** - Document pickup
+- **VAA** - Visa application
+
+## Locations
+
+- **AM** - Amsterdam
+- **DH** - Den Haag
+- **ZW** - Zwolle
+- **DEN** - Den Bosch
+- **UT** - Utrecht
+
+## How It Works
+
+1. **Cron Scheduler**: Runs every 15 minutes (configurable)
+2. **Appointment Checker**:
+   - Queries the IND API for each unique preference configuration
+   - Stores new appointments in the database
+   - Compares with existing appointments to find new ones
+3. **Notification Service**:
+   - Finds users who should be notified based on their preferences
+   - Sends email notifications with appointment details
+   - Logs all notification attempts
+4. **Cleanup Job**: Runs daily at 3 AM to remove old data
+
+## Email Notifications
+
+Users receive beautifully formatted HTML emails containing:
+- Number of new appointments found
+- Details of the first 10 appointments (date, time, location)
+- Direct link to the IND booking website
+- Link to manage notification preferences
+
+## Monitoring
+
+- Check cron job logs: `SELECT * FROM cron_job_log ORDER BY started_at DESC LIMIT 10;`
+- View notification history: `SELECT * FROM notification_log ORDER BY sent_at DESC LIMIT 20;`
+- Check application logs: `journalctl -u ind-appointments -f`
+
+## Troubleshooting
+
+### Database Connection Issues
+```bash
+# Test database connection
+mysql -h localhost -u your_user -p ind_appointments
+
+# Check if tables exist
+SHOW TABLES;
+```
+
+### Email Not Sending
+- Verify SMTP credentials in `.env`
+- For Gmail: Use an [App Password](https://support.google.com/accounts/answer/185833)
+- Check notification logs: `SELECT * FROM notification_log WHERE success = FALSE;`
+
+### Cron Jobs Not Running
+- Check application logs
+- Verify `IND_CHECK_INTERVAL_MINUTES` in `.env`
+- Restart the application
+
+## Development
+
+### Running Tests
+```bash
+npm run type-check
+npm run lint
+```
+
+### Manual Appointment Check
+```bash
+# In development, you can trigger a check manually:
+curl -X POST http://localhost:3000/api/appointments \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+## Security Notes
+
+- Always use strong, unique secrets for `JWT_SECRET` and `SESSION_SECRET`
+- Use HTTPS in production
+- Regularly update dependencies
+- Monitor logs for suspicious activity
+- Keep database credentials secure
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+This is an unofficial tool to help track IND appointment availability. Not affiliated with IND.
+
+## Support
+
+For issues and questions:
+1. Check the logs: `journalctl -u ind-appointments -f`
+2. Verify database connectivity
+3. Check SMTP settings
+4. Review the API health endpoint: `http://localhost:3000/api/health`
+
+## Future Enhancements
+
+- Push notifications (web-push)
+- SMS notifications
+- Telegram/WhatsApp integration
+- Mobile app
+- More locations and appointment types
+- Appointment booking automation (requires IND API authentication)
