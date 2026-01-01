@@ -23,12 +23,32 @@ class Security {
   private bcryptRounds: number;
 
   private constructor() {
-    this.jwtSecret = process.env.JWT_SECRET || 'fallback-secret-change-this';
+    const envSecret = process.env.JWT_SECRET;
     this.bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS || '12');
 
-    if (this.jwtSecret === 'fallback-secret-change-this') {
-      logger.warn('Using fallback JWT secret. Please set JWT_SECRET environment variable.');
+    if (!envSecret) {
+      // Check if we're in Next.js build phase (collecting page data)
+      const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build' ||
+                          process.argv.some(arg => arg.includes('next') && process.argv.some(a => a === 'build'));
+
+      if (process.env.NODE_ENV === 'production' && !isBuildPhase) {
+        throw new Error('CRITICAL: JWT_SECRET environment variable must be set in production. Set JWT_SECRET before starting the server.');
+      }
+
+      // Development/build fallback - generate a random secret per server restart
+      this.jwtSecret = require('crypto').randomBytes(32).toString('hex');
+
+      // Only warn in non-build contexts
+      if (!isBuildPhase) {
+        logger.warn('JWT_SECRET not set - using random secret. Sessions will not persist across restarts. Set JWT_SECRET in production!');
+      }
+    } else {
+      this.jwtSecret = envSecret;
     }
+  }
+
+  public getJwtSecret(): string {
+    return this.jwtSecret;
   }
 
   public static getInstance(): Security {
@@ -96,14 +116,16 @@ class Security {
     return true;
   }
 
-  // Security headers
+  // Security headers - enabled by default, can be disabled for development
   public addSecurityHeaders<T>(response: NextResponse<T>): NextResponse<T> {
-    if (process.env.ENABLE_SECURITY_HEADERS === 'true') {
+    // Security headers are now enabled by default - set DISABLE_SECURITY_HEADERS=true to disable
+    if (process.env.DISABLE_SECURITY_HEADERS !== 'true') {
       response.headers.set('X-Content-Type-Options', 'nosniff');
       response.headers.set('X-Frame-Options', 'DENY');
       response.headers.set('X-XSS-Protection', '1; mode=block');
       response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
       response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+      response.headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;");
 
       if (process.env.NODE_ENV === 'production') {
         response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
@@ -114,12 +136,55 @@ class Security {
 
   // Input validation
   public validateEmail(email: string): boolean {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+    // More robust email validation
+    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+    return emailRegex.test(email) && email.length <= 254;
+  }
+
+  public validatePassword(password: string): { valid: boolean; message?: string } {
+    if (!password || password.length < 8) {
+      return { valid: false, message: 'Password must be at least 8 characters long' };
+    }
+
+    if (password.length > 128) {
+      return { valid: false, message: 'Password must be less than 128 characters' };
+    }
+
+    if (!/[A-Z]/.test(password)) {
+      return { valid: false, message: 'Password must contain at least one uppercase letter' };
+    }
+
+    if (!/[a-z]/.test(password)) {
+      return { valid: false, message: 'Password must contain at least one lowercase letter' };
+    }
+
+    if (!/[0-9]/.test(password)) {
+      return { valid: false, message: 'Password must contain at least one number' };
+    }
+
+    if (!/[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/`~]/.test(password)) {
+      return { valid: false, message: 'Password must contain at least one special character' };
+    }
+
+    return { valid: true };
   }
 
   public sanitizeInput(input: string): string {
     return input.trim().replace(/[<>\"']/g, '');
+  }
+
+  // Generate a signed token for sensitive operations like unsubscribe
+  public generateSignedToken(data: object, expiresIn: string = '7d'): string {
+    return require('jsonwebtoken').sign(data, this.jwtSecret, { expiresIn });
+  }
+
+  // Verify a signed token
+  public verifySignedToken<T = any>(token: string): T | null {
+    try {
+      return require('jsonwebtoken').verify(token, this.jwtSecret) as T;
+    } catch {
+      return null;
+    }
   }
 
   // Authentication middleware

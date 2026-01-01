@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { db } from '@/lib/database';
-import { verifyAuth } from '@/lib/security';
+import { verifyAuth, security } from '@/lib/security';
 import { rateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
@@ -49,9 +49,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate new password strength
-    if (newPassword.length < 8) {
+    const passwordValidation = security.validatePassword(newPassword);
+    if (!passwordValidation.valid) {
       return NextResponse.json(
-        { success: false, message: 'New password must be at least 8 characters long' },
+        { success: false, message: passwordValidation.message },
         { status: 400 }
       );
     }

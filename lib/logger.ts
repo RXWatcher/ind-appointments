@@ -18,7 +18,7 @@ class Logger {
 
   private constructor() {
     this.logLevel = (process.env.LOG_LEVEL as LogLevel) || 'info';
-    this.logFile = process.env.LOG_FILE || '/opt/Smart-Parking/logs/app.log';
+    this.logFile = process.env.LOG_FILE || path.join(process.cwd(), 'logs', 'app.log');
 
     // Ensure log directory exists
     const logDir = path.dirname(this.logFile);

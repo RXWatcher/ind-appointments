@@ -1,11 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database';
+import { security } from '@/lib/security';
+
+interface UnsubscribeToken {
+  preferenceId: number;
+  email: string;
+}
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const id = searchParams.get('id');
-    const email = searchParams.get('email');
+    const token = searchParams.get('token');
+
+    // Legacy support: also check for old id/email params
+    const legacyId = searchParams.get('id');
+    const legacyEmail = searchParams.get('email');
+
+    let id: number | null = null;
+    let email: string | null = null;
+
+    // Try signed token first (new secure method)
+    if (token) {
+      const decoded = security.verifySignedToken<UnsubscribeToken>(token);
+      if (decoded) {
+        id = decoded.preferenceId;
+        email = decoded.email;
+      }
+    }
+
+    // Fall back to legacy params if no valid token (for backwards compatibility with existing emails)
+    if (!id && legacyId && legacyEmail) {
+      id = parseInt(legacyId);
+      email = legacyEmail;
+    }
 
     if (!id || !email) {
       return new NextResponse(

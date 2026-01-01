@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { db } from '@/lib/database';
 import { sendVerificationEmail } from '@/lib/email';
 import { rateLimit } from '@/lib/rate-limit';
+import { security } from '@/lib/security';
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,9 +34,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (password.length < 8) {
+    // Validate email format
+    if (!security.validateEmail(email)) {
       return NextResponse.json(
-        { success: false, message: 'Password must be at least 8 characters long' },
+        { success: false, message: 'Invalid email format' },
+        { status: 400 }
+      );
+    }
+
+    // Validate password strength
+    const passwordValidation = security.validatePassword(password);
+    if (!passwordValidation.valid) {
+      return NextResponse.json(
+        { success: false, message: passwordValidation.message },
         { status: 400 }
       );
     }

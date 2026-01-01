@@ -1,5 +1,155 @@
 import { db } from '@/lib/database';
 
+interface TelegramNotification {
+  userId: number;
+  message: string;
+  parseMode?: 'HTML' | 'Markdown';
+}
+
+/**
+ * Send a Telegram notification via Bot API
+ */
+export async function sendTelegramNotification(data: TelegramNotification): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    // Get admin's Telegram Bot token
+    const settingsQuery = await db.query(`
+      SELECT setting_value
+      FROM system_settings
+      WHERE setting_key = 'telegram_bot_token'
+    `);
+
+    if (!settingsQuery || settingsQuery.length === 0) {
+      return { success: false, error: 'Telegram Bot token not configured by admin' };
+    }
+
+    const botToken = (settingsQuery[0] as any).setting_value;
+
+    if (!botToken) {
+      return { success: false, error: 'Telegram Bot token not configured by admin' };
+    }
+
+    // Get user's Telegram chat ID
+    const credentialsQuery = await db.query(`
+      SELECT telegram_chat_id
+      FROM user_notification_credentials
+      WHERE user_id = ?
+    `, [data.userId]);
+
+    if (!credentialsQuery || credentialsQuery.length === 0) {
+      return { success: false, error: 'User has not linked their Telegram account' };
+    }
+
+    const chatId = (credentialsQuery[0] as any).telegram_chat_id;
+
+    if (!chatId) {
+      return { success: false, error: 'User has not linked their Telegram account' };
+    }
+
+    // Send message via Telegram Bot API
+    const apiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: data.message,
+        parse_mode: data.parseMode || 'HTML',
+        disable_web_page_preview: false,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (response.ok && result.ok) {
+      return { success: true };
+    } else {
+      return {
+        success: false,
+        error: result.description || 'Unknown error from Telegram API',
+      };
+    }
+  } catch (error) {
+    console.error('[TELEGRAM] Error sending notification:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+interface WebhookNotification {
+  userId: number;
+  payload: object;
+}
+
+/**
+ * Send a webhook notification to user's configured URL
+ */
+export async function sendWebhookNotification(data: WebhookNotification): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    // Get user's webhook URL
+    const credentialsQuery = await db.query(`
+      SELECT webhook_url
+      FROM user_notification_credentials
+      WHERE user_id = ?
+    `, [data.userId]);
+
+    if (!credentialsQuery || credentialsQuery.length === 0) {
+      return { success: false, error: 'User has not configured a webhook URL' };
+    }
+
+    const webhookUrl = (credentialsQuery[0] as any).webhook_url;
+
+    if (!webhookUrl) {
+      return { success: false, error: 'User has not configured a webhook URL' };
+    }
+
+    // Validate URL
+    try {
+      new URL(webhookUrl);
+    } catch {
+      return { success: false, error: 'Invalid webhook URL' };
+    }
+
+    // Send webhook
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'IND-Appointments-Tracker/1.0',
+      },
+      body: JSON.stringify({
+        ...data.payload,
+        timestamp: new Date().toISOString(),
+      }),
+    });
+
+    if (response.ok) {
+      return { success: true };
+    } else {
+      return {
+        success: false,
+        error: `Webhook returned ${response.status}: ${response.statusText}`,
+      };
+    }
+  } catch (error) {
+    console.error('[WEBHOOK] Error sending notification:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
 interface PushoverNotification {
   userId: number;
   title: string;

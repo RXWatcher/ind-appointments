@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS users (
   verification_token TEXT,
   reset_token TEXT,
   reset_token_expires DATETIME,
+  pending_email TEXT,
+  email_change_token TEXT,
+  email_change_requested_at DATETIME,
+  timezone TEXT DEFAULT 'Europe/Amsterdam',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   last_login DATETIME
@@ -62,6 +66,8 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
   email_enabled INTEGER DEFAULT 1,
   push_enabled INTEGER DEFAULT 0,
   whatsapp_enabled INTEGER DEFAULT 0,
+  telegram_enabled INTEGER DEFAULT 0,
+  webhook_enabled INTEGER DEFAULT 0,
   notification_interval INTEGER DEFAULT 15,
   dnd_start_time TEXT DEFAULT '22:00',
   dnd_end_time TEXT DEFAULT '08:00',
@@ -105,12 +111,15 @@ CREATE TABLE IF NOT EXISTS system_settings (
 
 CREATE INDEX IF NOT EXISTS idx_settings_key ON system_settings(setting_key);
 
--- User Notification Credentials table (for Pushover, WhatsApp, etc.)
+-- User Notification Credentials table (for Pushover, WhatsApp, Telegram, etc.)
 CREATE TABLE IF NOT EXISTS user_notification_credentials (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL UNIQUE,
   pushover_user_key TEXT,
   whatsapp_phone_number TEXT,
+  telegram_chat_id TEXT,
+  telegram_username TEXT,
+  webhook_url TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

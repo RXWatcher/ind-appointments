@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { db } from '@/lib/database';
+import { security } from '@/lib/security';
 
 export async function getSmtpSettings() {
   // Try to get settings from database first, fall back to environment variables
@@ -170,7 +171,7 @@ export async function sendNewAppointmentsEmail(data: NewAppointmentsEmailData) {
                 <p style="color: #991b1b; font-size: 16px; font-weight: 700; margin: 0 0 8px 0;">
                   ❌ Don't want these notifications anymore?
                 </p>
-                <a href="${settings.base_url}/api/preferences/unsubscribe?id=${data.preferenceId}&email=${encodeURIComponent(data.userEmail)}" style="display: inline-block; background-color: #dc2626; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: 700; font-size: 16px; margin-top: 8px; mso-padding-alt: 12px 28px;">
+                <a href="${settings.base_url}/api/preferences/unsubscribe?token=${security.generateSignedToken({ preferenceId: data.preferenceId, email: data.userEmail }, '30d')}" style="display: inline-block; background-color: #dc2626; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: 700; font-size: 16px; margin-top: 8px; mso-padding-alt: 12px 28px;">
                   🔕 Unsubscribe from This Alert
                 </a>
                 <p style="color: #7f1d1d; font-size: 12px; margin: 12px 0 0 0;">

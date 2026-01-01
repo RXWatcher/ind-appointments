@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { db } from '@/lib/database';
 import { rateLimit } from '@/lib/rate-limit';
+import { security } from '@/lib/security';
 
 export async function POST(request: NextRequest) {
   try {
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
     // Update last login
     await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
 
-    // Generate JWT token
+    // Generate JWT token using centralized security module
     const token = jwt.sign(
       {
         id: user.id,
@@ -73,8 +74,8 @@ export async function POST(request: NextRequest) {
         username: user.username,
         role: user.role
       },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '7d' }
+      security.getJwtSecret(),
+      { expiresIn: '24h' }
     );
 
     return NextResponse.json({

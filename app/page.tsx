@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { APPOINTMENT_TYPES, LOCATIONS, getAppointmentType } from '@/lib/appointment-data';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ContentZone } from '@/components/content-zone';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface Appointment {
   id: number;
@@ -40,14 +42,39 @@ const PERSON_COUNTS = [
   { value: '6', label: '6 Persons' },
 ];
 
-export default function HomePage() {
+function HomePageContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState({ type: '', location: '', persons: '' });
+  const [filter, setFilter] = useState({
+    type: searchParams.get('type') || '',
+    location: searchParams.get('location') || '',
+    persons: searchParams.get('persons') || ''
+  });
   const [user, setUser] = useState<any>(null);
   const [showCopiedNotice, setShowCopiedNotice] = useState(false);
   const [totalAppointments, setTotalAppointments] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [lastCheck, setLastCheck] = useState<string | null>(null);
+  const [shareUrlCopied, setShareUrlCopied] = useState(false);
+  const [newAppointmentsToast, setNewAppointmentsToast] = useState<{ count: number; source: string } | null>(null);
+
+  // WebSocket for real-time updates
+  const handleNewAppointments = useCallback((appointments: any[], source: string) => {
+    console.log(`[WS] Received ${appointments.length} new appointments from ${source}`);
+    setNewAppointmentsToast({ count: appointments.length, source });
+    // Auto-refresh after showing toast
+    setTimeout(() => {
+      fetchAppointments();
+      setNewAppointmentsToast(null);
+    }, 3000);
+  }, []);
+
+  const { isConnected } = useWebSocket({
+    onNewAppointments: handleNewAppointments,
+  });
 
   useEffect(() => {
     // Check for auth token
@@ -64,7 +91,26 @@ export default function HomePage() {
 
   useEffect(() => {
     fetchAppointments();
+    // Update URL with current filters
+    const params = new URLSearchParams();
+    if (filter.type) params.set('type', filter.type);
+    if (filter.location) params.set('location', filter.location);
+    if (filter.persons) params.set('persons', filter.persons);
+    const newUrl = params.toString() ? `?${params.toString()}` : '/';
+    router.replace(newUrl, { scroll: false });
   }, [filter]);
+
+  useEffect(() => {
+    // Fetch status on mount
+    fetch('/api/status')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data.lastCheck) {
+          setLastCheck(data.data.lastCheck);
+        }
+      })
+      .catch(err => console.error('Error fetching status:', err));
+  }, []);
 
   const fetchAppointments = async () => {
     setLoading(true);
@@ -109,6 +155,21 @@ export default function HomePage() {
     return `In ${diffDays} days`;
   };
 
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins === 1) return '1 minute ago';
+    if (diffMins < 60) return `${diffMins} minutes ago`;
+    if (diffHours === 1) return '1 hour ago';
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     setUser(null);
@@ -145,6 +206,33 @@ export default function HomePage() {
     window.open(`/autobook?${helperParams.toString()}`, '_blank');
   };
 
+  const copyAppointmentDetails = async (appointment: Appointment) => {
+    const details = `IND Appointment Details:
+Type: ${appointment.appointment_type_name}
+Location: ${appointment.location_name}
+Date: ${formatDate(appointment.date)}
+Time: ${appointment.start_time} - ${appointment.end_time}
+Persons: ${appointment.persons}`;
+
+    try {
+      await navigator.clipboard.writeText(details);
+      setCopiedId(appointment.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const shareFilteredView = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setShareUrlCopied(true);
+      setTimeout(() => setShareUrlCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy URL:', err);
+    }
+  };
+
   return (
     <div className="min-h-screen md:h-screen flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
       {/* Copied Notification */}
@@ -154,6 +242,24 @@ export default function HomePage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
           <span>Starting automation...</span>
+        </div>
+      )}
+
+      {/* New Appointments Toast */}
+      {newAppointmentsToast && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-bounce">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          </svg>
+          <span>{newAppointmentsToast.count} new appointment{newAppointmentsToast.count > 1 ? 's' : ''} found! Refreshing...</span>
+        </div>
+      )}
+
+      {/* WebSocket Connection Status */}
+      {user && (
+        <div className={`fixed bottom-4 right-4 z-40 px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5 ${isConnected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span>
+          <span>{isConnected ? 'Live updates' : 'Offline'}</span>
         </div>
       )}
 
@@ -310,7 +416,30 @@ export default function HomePage() {
         <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           {/* Filters */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-3">
-          <h2 className="text-base font-semibold mb-3 text-gray-900 dark:text-gray-100">Filter Appointments</h2>
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Filter Appointments</h2>
+            <button
+              onClick={shareFilteredView}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              title="Copy link to filtered view"
+            >
+              {shareUrlCopied ? (
+                <>
+                  <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>Copied!</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                  <span>Share</span>
+                </>
+              )}
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -363,12 +492,18 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Next Available Stat */}
-        <div className="mb-3">
+        {/* Stats Row */}
+        <div className="mb-3 grid grid-cols-2 gap-3">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-3">
             <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Next Available</div>
             <div className="text-base font-bold text-purple-600">
               {appointments.length > 0 ? getDaysFromNow(appointments[0].date) : 'N/A'}
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-3">
+            <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Last Checked</div>
+            <div className="text-base font-bold text-green-600">
+              {lastCheck ? formatTimeAgo(lastCheck) : 'N/A'}
             </div>
           </div>
         </div>
@@ -378,12 +513,40 @@ export default function HomePage() {
             <div className="p-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex justify-between items-center">
                 <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Available Appointments</h2>
-                <button
-                  onClick={fetchAppointments}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Refresh
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const params = new URLSearchParams();
+                      if (filter.type) params.append('type', filter.type);
+                      if (filter.location) params.append('location', filter.location);
+                      if (filter.persons) params.append('persons', filter.persons);
+                      window.location.href = `/api/appointments/export?${params}`;
+                    }}
+                    className="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-1"
+                    title="Export to CSV"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="hidden sm:inline">CSV</span>
+                  </button>
+                  <a
+                    href={`/api/appointments/ical?${new URLSearchParams(Object.entries(filter).filter(([_, v]) => v)).toString()}`}
+                    className="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-1"
+                    title="Export to Calendar (iCal)"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="hidden sm:inline">iCal</span>
+                  </a>
+                  <button
+                    onClick={fetchAppointments}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Refresh
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -478,13 +641,39 @@ export default function HomePage() {
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleBookNow(appointment)}
-                      className="w-full sm:w-auto sm:ml-4 px-4 py-3 sm:py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 whitespace-nowrap transition-colors min-h-[44px]"
-                      title="Opens IND booking page and copies details to clipboard"
-                    >
-                      Book Now →
-                    </button>
+                    <div className="flex gap-2 w-full sm:w-auto sm:ml-4">
+                      <button
+                        onClick={() => copyAppointmentDetails(appointment)}
+                        className="flex-shrink-0 px-3 py-3 sm:py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors min-h-[44px] flex items-center justify-center"
+                        title="Copy appointment details"
+                      >
+                        {copiedId === appointment.id ? (
+                          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        )}
+                      </button>
+                      <a
+                        href={`/api/appointments/ical?id=${appointment.id}`}
+                        className="flex-shrink-0 px-3 py-3 sm:py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors min-h-[44px] flex items-center justify-center"
+                        title="Add to calendar"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </a>
+                      <button
+                        onClick={() => handleBookNow(appointment)}
+                        className="flex-1 sm:flex-initial px-4 py-3 sm:py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 whitespace-nowrap transition-colors min-h-[44px]"
+                        title="Opens IND booking page"
+                      >
+                        Book Now →
+                      </button>
+                    </div>
                   </div>
                 </div>
                 {/* Insert content every 10 appointments */}
@@ -525,5 +714,26 @@ export default function HomePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Loading fallback for Suspense
+function HomePageLoading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      <div className="text-center">
+        <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <p className="mt-4 text-gray-600 dark:text-gray-400">Loading appointments...</p>
+      </div>
+    </div>
+  );
+}
+
+// Wrap in Suspense for useSearchParams
+export default function HomePage() {
+  return (
+    <Suspense fallback={<HomePageLoading />}>
+      <HomePageContent />
+    </Suspense>
   );
 }

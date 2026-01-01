@@ -22,6 +22,38 @@ import {
 import { sendNewAppointmentsEmail } from '@/lib/email';
 import { sendPushoverNotification } from '@/lib/notifications';
 
+/**
+ * Broadcast new appointments to connected WebSocket clients
+ */
+function broadcastNewAppointments(appointments: INDAppointmentWithMetadata[], source: string = 'IND'): void {
+  try {
+    // Check if wsBroadcast is available (only in custom server)
+    if (typeof global !== 'undefined' && (global as any).wsBroadcast) {
+      (global as any).wsBroadcast({
+        type: 'NEW_APPOINTMENTS',
+        data: {
+          count: appointments.length,
+          source,
+          appointments: appointments.map(a => ({
+            id: a.key,
+            date: a.date,
+            startTime: a.startTime,
+            endTime: a.endTime,
+            appointmentType: a.appointmentType,
+            appointmentTypeName: a.appointmentTypeName,
+            location: a.location,
+            locationName: a.locationName,
+            persons: a.persons
+          }))
+        },
+        timestamp: Date.now()
+      });
+    }
+  } catch (error) {
+    console.error('[WS BROADCAST] Error broadcasting new appointments:', error);
+  }
+}
+
 interface PreferenceConfig {
   id: number;
   user_id: number;
@@ -123,6 +155,9 @@ export async function checkAndNotifyNewAppointments(filterTypes?: string[]): Pro
         if (newAppointments.length > 0) {
           console.log(`[APPOINTMENT CHECKER] ${newAppointments.length} NEW appointments for ${config.appointmentType} at ${config.location}`);
 
+          // Broadcast to connected WebSocket clients
+          broadcastNewAppointments(newAppointments, 'IND');
+
           // Find users who should be notified
           // Match users who have: same type AND (location matches OR "ALL" locations) AND same persons
           const usersToNotify = preferences.filter(p => {
@@ -184,6 +219,9 @@ export async function checkAndNotifyNewAppointments(filterTypes?: string[]): Pro
             if (newAppointments.length > 0) {
               console.log(`[THE HAGUE IC] ${newAppointments.length} NEW appointments for ${type}, ${persons} person(s)`);
 
+              // Broadcast to connected WebSocket clients
+              broadcastNewAppointments(newAppointments, 'THE_HAGUE_IC');
+
               // Find users who should be notified (match on appointment type BIO/DOC and persons count)
               const usersToNotify = preferences.filter(p => {
                 const enrichedType = enriched[0]?.appointmentType;
@@ -228,6 +266,9 @@ export async function checkAndNotifyNewAppointments(filterTypes?: string[]): Pro
         if (newAppointments.length > 0) {
           console.log(`[ROTTERDAM IC] ${newAppointments.length} NEW appointments`);
 
+          // Broadcast to connected WebSocket clients
+          broadcastNewAppointments(newAppointments, 'ROTTERDAM_IC');
+
           // Find users who should be notified
           const usersToNotify = preferences.filter(p => {
             const enrichedType = enriched[0]?.appointmentType;
@@ -262,13 +303,17 @@ export async function checkAndNotifyNewAppointments(filterTypes?: string[]): Pro
           continue;
         }
 
-        // Check if enough time has passed since last notification
-        if (!hasIntervalPassed(user.last_notification_at, user.notification_interval)) {
+        // Check if enough time has passed since last notification (with smart throttling for urgent appointments)
+        const throttleResult = smartThrottleCheck(user.last_notification_at, user.notification_interval, appointments);
+        if (!throttleResult.shouldSend) {
           const minutesSinceLast = user.last_notification_at
             ? Math.floor((new Date().getTime() - new Date(user.last_notification_at).getTime()) / (1000 * 60))
             : 0;
-          console.log(`[APPOINTMENT CHECKER] Skipping notification for user ${user.user_id} - interval not reached (${minutesSinceLast}/${user.notification_interval} minutes)`);
+          console.log(`[APPOINTMENT CHECKER] Skipping notification for user ${user.user_id} - interval not reached (${minutesSinceLast}/${throttleResult.effectiveInterval} minutes)`);
           continue;
+        }
+        if (throttleResult.isUrgent) {
+          console.log(`[APPOINTMENT CHECKER] URGENT: User ${user.user_id} has appointments within 2 days - using expedited throttling`);
         }
 
         // Remove duplicates by appointment key
@@ -398,6 +443,43 @@ function hasIntervalPassed(lastNotificationAt: string | null, intervalMinutes: n
 }
 
 /**
+ * Smart throttling: Check if we should send notification based on appointment urgency
+ * Urgent appointments (within 2 days) bypass normal throttling
+ * Returns { shouldSend: boolean, isUrgent: boolean, effectiveInterval: number }
+ */
+function smartThrottleCheck(
+  lastNotificationAt: string | null,
+  intervalMinutes: number,
+  appointments: INDAppointmentWithMetadata[]
+): { shouldSend: boolean; isUrgent: boolean; effectiveInterval: number } {
+  const now = new Date();
+  const twoDaysFromNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+
+  // Check if any appointments are urgent (within 2 days)
+  const hasUrgentAppointment = appointments.some(appt => {
+    const appointmentDate = new Date(appt.date);
+    return appointmentDate <= twoDaysFromNow;
+  });
+
+  if (hasUrgentAppointment) {
+    // For urgent appointments, use a reduced interval (5 minutes minimum)
+    const urgentInterval = Math.min(intervalMinutes, 5);
+    return {
+      shouldSend: hasIntervalPassed(lastNotificationAt, urgentInterval),
+      isUrgent: true,
+      effectiveInterval: urgentInterval
+    };
+  }
+
+  // Normal throttling for non-urgent appointments
+  return {
+    shouldSend: hasIntervalPassed(lastNotificationAt, intervalMinutes),
+    isUrgent: false,
+    effectiveInterval: intervalMinutes
+  };
+}
+
+/**
  * Update the last notification timestamp for a preference
  */
 async function updateLastNotificationTime(preferenceId: number): Promise<void> {
@@ -444,6 +526,7 @@ async function getActivePreferences(): Promise<PreferenceConfig[]> {
 
 /**
  * Store appointments with source information
+ * Uses parameterized queries to prevent SQL injection
  */
 async function storeAppointmentsWithSource(appointments: INDAppointmentWithMetadata[], source: AppointmentSource): Promise<INDAppointmentWithMetadata[]> {
   if (appointments.length === 0) {
@@ -460,28 +543,38 @@ async function storeAppointmentsWithSource(appointments: INDAppointmentWithMetad
     const newAppointments = appointments.filter(a => !existingKeys.has(a.key));
     const existingAppointments = appointments.filter(a => existingKeys.has(a.key));
 
-    // Batch INSERT new appointments WITH SOURCE
+    // Insert new appointments one by one with parameterized queries (safe from SQL injection)
     if (newAppointments.length > 0) {
-      const valueRows = newAppointments.map(appt =>
-        `('${appt.key}', '${appt.date}', '${appt.startTime}', '${appt.endTime}', '${appt.appointmentType}', '${appt.location}', '${appt.locationName.replace(/'/g, "''")}', '${appt.appointmentTypeName.replace(/'/g, "''")}', ${appt.persons}, ${appt.parts}, '${source}', 1)`
-      ).join(',\n');
-
       const insertQuery = `
         INSERT INTO ind_appointments (
           appointment_key, date, start_time, end_time,
           appointment_type, location, location_name, appointment_type_name,
           persons, parts, source, is_available
-        ) VALUES ${valueRows}
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
       `;
 
-      await db.query(insertQuery);
-      console.log(`[APPOINTMENT CHECKER] Batch inserted ${newAppointments.length} new ${source} appointments`);
+      for (const appt of newAppointments) {
+        await db.query(insertQuery, [
+          appt.key,
+          appt.date,
+          appt.startTime,
+          appt.endTime,
+          appt.appointmentType,
+          appt.location,
+          appt.locationName,
+          appt.appointmentTypeName,
+          appt.persons,
+          appt.parts,
+          source
+        ]);
+      }
+      console.log(`[APPOINTMENT CHECKER] Inserted ${newAppointments.length} new ${source} appointments`);
     }
 
-    // Batch UPDATE existing appointments
+    // Batch UPDATE existing appointments (already uses parameterized query)
     if (existingAppointments.length > 0) {
-      const existingKeys = existingAppointments.map(a => a.key);
-      const updatePlaceholders = existingKeys.map(() => '?').join(',');
+      const existingKeysList = existingAppointments.map(a => a.key);
+      const updatePlaceholders = existingKeysList.map(() => '?').join(',');
       const updateQuery = `
         UPDATE ind_appointments
         SET last_seen_at = CURRENT_TIMESTAMP,
@@ -489,7 +582,7 @@ async function storeAppointmentsWithSource(appointments: INDAppointmentWithMetad
         WHERE appointment_key IN (${updatePlaceholders})
       `;
 
-      await db.query(updateQuery, existingKeys);
+      await db.query(updateQuery, existingKeysList);
       console.log(`[APPOINTMENT CHECKER] Batch updated ${existingAppointments.length} existing ${source} appointments`);
     }
 
@@ -502,7 +595,7 @@ async function storeAppointmentsWithSource(appointments: INDAppointmentWithMetad
 
 /**
  * Store appointments in database and return only new ones
- * OPTIMIZED: Uses batch operations instead of individual queries
+ * Uses parameterized queries to prevent SQL injection
  */
 async function storeAppointments(appointments: INDAppointmentWithMetadata[]): Promise<INDAppointmentWithMetadata[]> {
   if (appointments.length === 0) {
@@ -521,28 +614,38 @@ async function storeAppointments(appointments: INDAppointmentWithMetadata[]): Pr
     const newAppointments = appointments.filter(a => !existingKeys.has(a.key));
     const existingAppointments = appointments.filter(a => existingKeys.has(a.key));
 
-    // Step 3: Batch INSERT all new appointments
+    // Step 3: Insert new appointments with parameterized queries (safe from SQL injection)
     if (newAppointments.length > 0) {
-      const valueRows = newAppointments.map(appt =>
-        `('${appt.key}', '${appt.date}', '${appt.startTime}', '${appt.endTime}', '${appt.appointmentType}', '${appt.location}', '${appt.locationName.replace(/'/g, "''")}', '${appt.appointmentTypeName.replace(/'/g, "''")}', ${appt.persons}, ${appt.parts}, 'IND', 1)`
-      ).join(',\n');
-
       const insertQuery = `
         INSERT INTO ind_appointments (
           appointment_key, date, start_time, end_time,
           appointment_type, location, location_name, appointment_type_name,
           persons, parts, source, is_available
-        ) VALUES ${valueRows}
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
       `;
 
-      await db.query(insertQuery);
-      console.log(`[APPOINTMENT CHECKER] Batch inserted ${newAppointments.length} new appointments`);
+      for (const appt of newAppointments) {
+        await db.query(insertQuery, [
+          appt.key,
+          appt.date,
+          appt.startTime,
+          appt.endTime,
+          appt.appointmentType,
+          appt.location,
+          appt.locationName,
+          appt.appointmentTypeName,
+          appt.persons,
+          appt.parts,
+          'IND'
+        ]);
+      }
+      console.log(`[APPOINTMENT CHECKER] Inserted ${newAppointments.length} new appointments`);
     }
 
-    // Step 4: Batch UPDATE existing appointments
+    // Step 4: Batch UPDATE existing appointments (already uses parameterized query)
     if (existingAppointments.length > 0) {
-      const existingKeys = existingAppointments.map(a => a.key);
-      const updatePlaceholders = existingKeys.map(() => '?').join(',');
+      const existingKeysList = existingAppointments.map(a => a.key);
+      const updatePlaceholders = existingKeysList.map(() => '?').join(',');
       const updateQuery = `
         UPDATE ind_appointments
         SET last_seen_at = CURRENT_TIMESTAMP,
@@ -550,13 +653,13 @@ async function storeAppointments(appointments: INDAppointmentWithMetadata[]): Pr
         WHERE appointment_key IN (${updatePlaceholders})
       `;
 
-      await db.query(updateQuery, existingKeys);
+      await db.query(updateQuery, existingKeysList);
       console.log(`[APPOINTMENT CHECKER] Batch updated ${existingAppointments.length} existing appointments`);
     }
 
     return newAppointments;
   } catch (error) {
-    console.error(`[APPOINTMENT CHECKER] Error in batch store:`, error);
+    console.error(`[APPOINTMENT CHECKER] Error in store:`, error);
     // Fallback to individual inserts if batch fails
     console.log(`[APPOINTMENT CHECKER] Falling back to individual inserts...`);
     return await storeAppointmentsIndividually(appointments);

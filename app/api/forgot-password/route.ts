@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { db } from '@/lib/database';
 import { sendPasswordResetEmail } from '@/lib/email';
+import { rateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,6 +13,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, message: 'Email is required' },
         { status: 400 }
+      );
+    }
+
+    // Apply rate limiting (3 attempts per 15 minutes per IP to prevent email bombing)
+    const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+    const rateLimitResult = rateLimit(`forgot-password:${ip}`, 3, 15 * 60 * 1000);
+
+    if (!rateLimitResult.allowed) {
+      const waitMinutes = Math.ceil((rateLimitResult.resetTime! - Date.now()) / 60000);
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Too many password reset requests. Please try again in ${waitMinutes} minute${waitMinutes > 1 ? 's' : ''}.`
+        },
+        { status: 429 }
       );
     }
 

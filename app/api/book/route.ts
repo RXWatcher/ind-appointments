@@ -1,7 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyAuth } from '@/lib/security';
+import { rateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
   try {
+    // Require authentication
+    const auth = await verifyAuth(request);
+    if (!auth) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    // Apply rate limiting (10 booking attempts per 15 minutes per user)
+    const rateLimitResult = rateLimit(`book:${auth.id}`, 10, 15 * 60 * 1000);
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Too many booking attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const { appointmentType, location, date, startTime, endTime, persons } = body;
 

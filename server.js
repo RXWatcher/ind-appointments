@@ -38,21 +38,43 @@ app.prepare().then(() => {
     console.log('New WebSocket connection');
 
     const url = new URL(req.url, `http://${req.headers.host}`);
+    const token = url.searchParams.get('token');
     const username = url.searchParams.get('username');
-    const userId = url.searchParams.get('userId');
 
-    if (!username) {
-      ws.close(1008, 'Username required');
+    // Verify JWT token for authentication
+    let authenticatedUser = null;
+    if (token) {
+      try {
+        const jwt = require('jsonwebtoken');
+        const jwtSecret = process.env.JWT_SECRET;
+        if (jwtSecret) {
+          authenticatedUser = jwt.verify(token, jwtSecret);
+        }
+      } catch (err) {
+        console.log('WebSocket: Invalid token');
+      }
+    }
+
+    // Require valid authentication
+    if (!authenticatedUser) {
+      console.log('WebSocket: Authentication required');
+      ws.close(1008, 'Authentication required');
+      return;
+    }
+
+    const userKey = authenticatedUser.email || authenticatedUser.username || username;
+    if (!userKey) {
+      ws.close(1008, 'User identification required');
       return;
     }
 
     // Register client
-    if (!clients.has(username)) {
-      clients.set(username, []);
+    if (!clients.has(userKey)) {
+      clients.set(userKey, []);
     }
-    clients.get(username).push(ws);
+    clients.get(userKey).push(ws);
 
-    console.log(`Client connected: ${username} (Total: ${getTotalClients()})`);
+    console.log(`Client connected: ${userKey} (Total: ${getTotalClients()})`);
 
     // Send welcome message
     ws.send(JSON.stringify({
@@ -71,14 +93,14 @@ app.prepare().then(() => {
     });
 
     ws.on('close', () => {
-      console.log(`Client disconnected: ${username}`);
-      const userClients = clients.get(username);
+      console.log(`Client disconnected: ${userKey}`);
+      const userClients = clients.get(userKey);
       if (userClients) {
         const filtered = userClients.filter(client => client !== ws);
         if (filtered.length === 0) {
-          clients.delete(username);
+          clients.delete(userKey);
         } else {
-          clients.set(username, filtered);
+          clients.set(userKey, filtered);
         }
       }
       console.log(`Total clients: ${getTotalClients()}`);
@@ -99,6 +121,43 @@ app.prepare().then(() => {
 
   // Make clients map available globally for API routes
   global.wsClients = clients;
+
+  // Broadcast function for sending updates to all connected clients
+  global.wsBroadcast = function(message) {
+    const payload = JSON.stringify(message);
+    let sentCount = 0;
+    clients.forEach((clientList, userKey) => {
+      clientList.forEach(ws => {
+        if (ws.readyState === 1) { // OPEN
+          try {
+            ws.send(payload);
+            sentCount++;
+          } catch (err) {
+            console.error(`Error sending to ${userKey}:`, err);
+          }
+        }
+      });
+    });
+    console.log(`[WS] Broadcast to ${sentCount} clients:`, message.type);
+    return sentCount;
+  };
+
+  // Broadcast to specific user
+  global.wsBroadcastToUser = function(userKey, message) {
+    const payload = JSON.stringify(message);
+    const userClients = clients.get(userKey);
+    if (userClients) {
+      userClients.forEach(ws => {
+        if (ws.readyState === 1) {
+          try {
+            ws.send(payload);
+          } catch (err) {
+            console.error(`Error sending to ${userKey}:`, err);
+          }
+        }
+      });
+    }
+  };
 
   server.once('error', (err) => {
     console.error(err);

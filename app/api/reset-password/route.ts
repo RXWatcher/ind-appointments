@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { db } from '@/lib/database';
+import { rateLimit } from '@/lib/rate-limit';
+import { security } from '@/lib/security';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,9 +16,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (password.length < 8) {
+    // Apply rate limiting (5 attempts per 15 minutes per IP to prevent token brute force)
+    const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+    const rateLimitResult = rateLimit(`reset-password:${ip}`, 5, 15 * 60 * 1000);
+
+    if (!rateLimitResult.allowed) {
+      const waitMinutes = Math.ceil((rateLimitResult.resetTime! - Date.now()) / 60000);
       return NextResponse.json(
-        { success: false, message: 'Password must be at least 8 characters long' },
+        {
+          success: false,
+          message: `Too many password reset attempts. Please try again in ${waitMinutes} minute${waitMinutes > 1 ? 's' : ''}.`
+        },
+        { status: 429 }
+      );
+    }
+
+    // Validate password strength
+    const passwordValidation = security.validatePassword(password);
+    if (!passwordValidation.valid) {
+      return NextResponse.json(
+        { success: false, message: passwordValidation.message },
         { status: 400 }
       );
     }
