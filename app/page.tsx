@@ -191,6 +191,12 @@ function HomePageContent() {
       return;
     }
 
+    if (source === 'DIGID') {
+      // Open DigiD video call booking page directly
+      window.open('https://digidafspraak.nederlandwereldwijd.nl/', '_blank');
+      return;
+    }
+
     // Default: IND booking with automation helper
     const helperParams = new URLSearchParams({
       type: appointment.appointment_type,
@@ -257,7 +263,10 @@ Persons: ${appointment.persons}`;
 
       {/* WebSocket Connection Status */}
       {user && (
-        <div className={`fixed bottom-4 right-4 z-40 px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5 ${isConnected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+        <div
+          className={`fixed z-40 px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5 ${isConnected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}
+          style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))', right: 'max(1rem, env(safe-area-inset-right))' }}
+        >
           <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span>
           <span>{isConnected ? 'Live updates' : 'Offline'}</span>
         </div>
@@ -420,7 +429,7 @@ Persons: ${appointment.persons}`;
             <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Filter Appointments</h2>
             <button
               onClick={shareFilteredView}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              className="flex items-center gap-1 px-3 py-2 md:py-1.5 text-sm md:text-xs min-h-[44px] md:min-h-0 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 active:bg-gray-300 transition-colors"
               title="Copy link to filtered view"
             >
               {shareUrlCopied ? (
@@ -442,13 +451,13 @@ Persons: ${appointment.persons}`;
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm md:text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Appointment Type
               </label>
               <select
                 value={filter.type}
                 onChange={(e) => setFilter({ ...filter, type: e.target.value })}
-                className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2.5 md:py-1.5 text-base md:text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               >
                 {APPOINTMENT_TYPE_OPTIONS.map((type) => (
                   <option key={type.value} value={type.value}>
@@ -458,13 +467,13 @@ Persons: ${appointment.persons}`;
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm md:text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Location
               </label>
               <select
                 value={filter.location}
                 onChange={(e) => setFilter({ ...filter, location: e.target.value })}
-                className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2.5 md:py-1.5 text-base md:text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               >
                 {LOCATION_OPTIONS.map((loc) => (
                   <option key={loc.value} value={loc.value}>
@@ -474,13 +483,13 @@ Persons: ${appointment.persons}`;
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm md:text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Number of Persons
               </label>
               <select
                 value={filter.persons}
                 onChange={(e) => setFilter({ ...filter, persons: e.target.value })}
-                className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2.5 md:py-1.5 text-base md:text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               >
                 {PERSON_COUNTS.map((count) => (
                   <option key={count.value} value={count.value}>
@@ -495,14 +504,14 @@ Persons: ${appointment.persons}`;
         {/* Stats Row */}
         <div className="mb-3 grid grid-cols-2 gap-3">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-3">
-            <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Next Available</div>
-            <div className="text-base font-bold text-purple-600">
+            <div className="text-sm md:text-xs text-gray-600 dark:text-gray-400 mb-1">Next Available</div>
+            <div className="text-lg md:text-base font-bold text-purple-600">
               {appointments.length > 0 ? getDaysFromNow(appointments[0].date) : 'N/A'}
             </div>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-3">
-            <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Last Checked</div>
-            <div className="text-base font-bold text-green-600">
+            <div className="text-sm md:text-xs text-gray-600 dark:text-gray-400 mb-1">Last Checked</div>
+            <div className="text-lg md:text-base font-bold text-green-600">
               {lastCheck ? formatTimeAgo(lastCheck) : 'N/A'}
             </div>
           </div>
@@ -522,27 +531,27 @@ Persons: ${appointment.persons}`;
                       if (filter.persons) params.append('persons', filter.persons);
                       window.location.href = `/api/appointments/export?${params}`;
                     }}
-                    className="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-1"
+                    className="px-3 py-2.5 md:py-2 text-sm min-h-[44px] md:min-h-0 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-gray-400 flex items-center gap-1"
                     title="Export to CSV"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <span className="hidden sm:inline">CSV</span>
+                    <span>CSV</span>
                   </button>
                   <a
                     href={`/api/appointments/ical?${new URLSearchParams(Object.entries(filter).filter(([_, v]) => v)).toString()}`}
-                    className="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-1"
+                    className="px-3 py-2.5 md:py-2 text-sm min-h-[44px] md:min-h-0 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-gray-400 flex items-center gap-1"
                     title="Export to Calendar (iCal)"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                    <span className="hidden sm:inline">iCal</span>
+                    <span>iCal</span>
                   </a>
                   <button
                     onClick={fetchAppointments}
-                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="px-4 py-2.5 md:py-2 text-sm min-h-[44px] md:min-h-0 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800"
                   >
                     Refresh
                   </button>
@@ -622,20 +631,20 @@ Persons: ${appointment.persons}`;
                       </div>
                       <div className="grid grid-cols-2 sm:flex sm:items-center gap-3 sm:gap-6 mt-3">
                         <div>
-                          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Date</div>
-                          <div className="font-semibold text-sm sm:text-base text-gray-900 dark:text-gray-100">
+                          <div className="text-sm text-gray-600 dark:text-gray-400">Date</div>
+                          <div className="font-semibold text-base text-gray-900 dark:text-gray-100">
                             {formatDate(appointment.date)}
                           </div>
                         </div>
                         <div>
-                          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Time</div>
-                          <div className="font-semibold text-sm sm:text-base text-gray-900 dark:text-gray-100">
+                          <div className="text-sm text-gray-600 dark:text-gray-400">Time</div>
+                          <div className="font-semibold text-base text-gray-900 dark:text-gray-100">
                             {appointment.start_time} - {appointment.end_time}
                           </div>
                         </div>
                         <div className="col-span-2 sm:col-span-1">
-                          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Availability</div>
-                          <div className="font-semibold text-sm sm:text-base text-purple-600">
+                          <div className="text-sm text-gray-600 dark:text-gray-400">Availability</div>
+                          <div className="font-semibold text-base text-purple-600">
                             {getDaysFromNow(appointment.date)}
                           </div>
                         </div>
@@ -644,31 +653,38 @@ Persons: ${appointment.persons}`;
                     <div className="flex gap-2 w-full sm:w-auto sm:ml-4">
                       <button
                         onClick={() => copyAppointmentDetails(appointment)}
-                        className="flex-shrink-0 px-3 py-3 sm:py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors min-h-[44px] flex items-center justify-center"
+                        className="flex-shrink-0 px-3 py-3 sm:py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-gray-400 transition-colors min-h-[44px] flex items-center justify-center gap-1"
                         title="Copy appointment details"
                       >
                         {copiedId === appointment.id ? (
-                          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
+                          <>
+                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span className="text-green-600">Copied</span>
+                          </>
                         ) : (
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
+                          <>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            <span>Copy</span>
+                          </>
                         )}
                       </button>
                       <a
                         href={`/api/appointments/ical?id=${appointment.id}`}
-                        className="flex-shrink-0 px-3 py-3 sm:py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors min-h-[44px] flex items-center justify-center"
+                        className="flex-shrink-0 px-3 py-3 sm:py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-gray-400 transition-colors min-h-[44px] flex items-center justify-center gap-1"
                         title="Add to calendar"
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
+                        <span>Cal</span>
                       </a>
                       <button
                         onClick={() => handleBookNow(appointment)}
-                        className="flex-1 sm:flex-initial px-4 py-3 sm:py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 whitespace-nowrap transition-colors min-h-[44px]"
+                        className="flex-1 sm:flex-initial px-4 py-3 sm:py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 active:bg-blue-800 whitespace-nowrap transition-colors min-h-[44px]"
                         title="Opens IND booking page"
                       >
                         Book Now →

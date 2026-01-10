@@ -5,7 +5,8 @@ import { INDAppointment, INDAppointmentWithMetadata } from '@/lib/ind-api';
 export const APPOINTMENT_SOURCES = {
   IND: 'IND',
   THE_HAGUE_IC: 'THE_HAGUE_IC',
-  ROTTERDAM_IC: 'ROTTERDAM_IC'
+  ROTTERDAM_IC: 'ROTTERDAM_IC',
+  DIGID: 'DIGID'
 } as const;
 
 export type AppointmentSource = keyof typeof APPOINTMENT_SOURCES;
@@ -295,6 +296,9 @@ export function generateBookNowURL(
   } else if (source === 'ROTTERDAM_IC') {
     // Rotterdam IC booking URL
     return 'https://www.rotterdam.info/en/internationals/appointment';
+  } else if (source === 'DIGID') {
+    // DigiD video call booking URL
+    return 'https://digidafspraak.nederlandwereldwijd.nl/';
   }
 
   // Default IND booking

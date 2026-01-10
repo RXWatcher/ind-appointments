@@ -73,7 +73,9 @@ export default function PreferencesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (formData.locations.length === 0) {
+    // For DigiD, location is always DIGID_VC; for others, require selection
+    const isDigiD = formData.appointmentType === 'DGD';
+    if (!isDigiD && formData.locations.length === 0) {
       alert('Please select at least one location');
       return;
     }
@@ -93,7 +95,8 @@ export default function PreferencesPage() {
         },
         body: JSON.stringify({
           ...formData,
-          location: formData.locations.join(',') // Convert array to comma-separated string
+          // For DigiD, always use DIGID_VC as location
+          location: isDigiD ? 'DIGID_VC' : formData.locations.join(',')
         }),
       });
 
@@ -236,7 +239,20 @@ export default function PreferencesPage() {
                   </label>
                   <select
                     value={formData.appointmentType}
-                    onChange={(e) => setFormData({ ...formData, appointmentType: e.target.value })}
+                    onChange={(e) => {
+                      const newType = e.target.value;
+                      // Auto-set location to DIGID_VC for DigiD Video Call
+                      setFormData(prev => {
+                        if (newType === 'DGD') {
+                          return { ...prev, appointmentType: newType, locations: ['DIGID_VC'] };
+                        } else if (prev.appointmentType === 'DGD') {
+                          // Switching away from DigiD, reset to ALL locations
+                          return { ...prev, appointmentType: newType, locations: ['ALL'] };
+                        } else {
+                          return { ...prev, appointmentType: newType };
+                        }
+                      });
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
                     {APPOINTMENT_TYPES.map((type) => (
@@ -245,61 +261,105 @@ export default function PreferencesPage() {
                       </option>
                     ))}
                   </select>
+                  {formData.appointmentType === 'DGD' && (
+                    <div className="mt-3 space-y-3">
+                      <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
+                        <div className="flex items-center">
+                          <svg className="h-5 w-5 text-green-600 dark:text-green-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          <span className="text-sm font-medium text-green-800 dark:text-green-200">
+                            Location: Video Call (Online)
+                          </span>
+                        </div>
+                      </div>
+                      <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-4 rounded">
+                        <div className="flex">
+                          <div className="flex-shrink-0">
+                            <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </div>
+                          <div className="ml-3">
+                            <p className="text-sm text-amber-800 dark:text-amber-200">
+                              <strong>DigiD Video Call:</strong> Appointments are released every <strong>Friday at 9:00 and 14:00</strong> (Amsterdam time).
+                              Slots fill up within minutes! We poll aggressively during these windows to catch new slots immediately.
+                            </p>
+                            <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                              For Dutch citizens abroad who need to activate their DigiD via video call.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
+                {/* Location selector - shows Video Call for DigiD, otherwise multi-select */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Locations (select multiple)
+                    Location{formData.appointmentType !== 'DGD' ? 's (select multiple)' : ''}
                   </label>
-                  <div className="space-y-2 max-h-none md:max-h-64 md:overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-2 dark:bg-gray-700">
-                    <label className="flex items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-600 rounded cursor-pointer min-h-[44px]">
-                      <input
-                        type="checkbox"
-                        checked={formData.locations.includes('ALL')}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setFormData({ ...formData, locations: ['ALL'] });
-                          } else {
-                            setFormData({ ...formData, locations: [] });
-                          }
-                        }}
-                        className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="ml-3 text-sm font-semibold text-gray-900 dark:text-gray-100 flex-1">All Locations</span>
-                    </label>
-                    <div className="border-t border-gray-200 dark:border-gray-600 pt-2">
-                      {LOCATIONS.map((loc) => (
-                        <label key={loc.value} className="flex items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-600 rounded cursor-pointer min-h-[44px]">
+
+                  {formData.appointmentType === 'DGD' ? (
+                    /* DigiD Video Call - show fixed location */
+                    <div className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-200">
+                      Video Call (Online)
+                    </div>
+                  ) : (
+                    /* Other appointment types - show multi-select */
+                    <>
+                      <div className="space-y-2 max-h-64 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-2 dark:bg-gray-700">
+                        <label className="flex items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-600 active:bg-gray-100 dark:active:bg-gray-500 rounded cursor-pointer min-h-[44px]">
                           <input
                             type="checkbox"
-                            checked={formData.locations.includes(loc.value)}
-                            disabled={formData.locations.includes('ALL')}
+                            checked={formData.locations.includes('ALL')}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setFormData({
-                                  ...formData,
-                                  locations: [...formData.locations.filter(l => l !== 'ALL'), loc.value]
-                                });
+                                setFormData({ ...formData, locations: ['ALL'] });
                               } else {
-                                setFormData({
-                                  ...formData,
-                                  locations: formData.locations.filter(l => l !== loc.value)
-                                });
+                                setFormData({ ...formData, locations: [] });
                               }
                             }}
                             className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                           />
-                          <span className="ml-3 text-sm text-gray-700 dark:text-gray-300 flex-1">{loc.label}</span>
+                          <span className="ml-3 text-sm font-semibold text-gray-900 dark:text-gray-100 flex-1">All Locations</span>
                         </label>
-                      ))}
-                    </div>
-                  </div>
-                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                    {formData.locations.includes('ALL')
-                      ? 'Monitoring all locations'
-                      : `Monitoring ${formData.locations.length} location${formData.locations.length !== 1 ? 's' : ''}`
-                    }
-                  </p>
+                        <div className="border-t border-gray-200 dark:border-gray-600 pt-2">
+                          {LOCATIONS.filter(loc => loc.value !== 'DIGID_VC').map((loc) => (
+                            <label key={loc.value} className="flex items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-600 active:bg-gray-100 dark:active:bg-gray-500 rounded cursor-pointer min-h-[44px]">
+                              <input
+                                type="checkbox"
+                                checked={formData.locations.includes(loc.value)}
+                                disabled={formData.locations.includes('ALL')}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormData({
+                                      ...formData,
+                                      locations: [...formData.locations.filter(l => l !== 'ALL'), loc.value]
+                                    });
+                                  } else {
+                                    setFormData({
+                                      ...formData,
+                                      locations: formData.locations.filter(l => l !== loc.value)
+                                    });
+                                  }
+                                }}
+                                className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                              />
+                              <span className="ml-3 text-sm text-gray-700 dark:text-gray-300 flex-1">{loc.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        {formData.locations.includes('ALL')
+                          ? 'Monitoring all locations'
+                          : `Monitoring ${formData.locations.length} location${formData.locations.length !== 1 ? 's' : ''}`
+                        }
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <div>

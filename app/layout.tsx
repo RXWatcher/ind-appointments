@@ -32,6 +32,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
+  viewportFit: 'cover', // Enable safe area insets for iPhone notches
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#1e40af' },
     { media: '(prefers-color-scheme: dark)', color: '#1e3a8a' },

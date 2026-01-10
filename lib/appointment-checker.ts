@@ -1,6 +1,8 @@
 // Appointment Checker Service - Core logic for checking and notifying about new appointments
 
 import { db } from '@/lib/database';
+import { withJobLock } from '@/lib/job-lock';
+import { SCRAPING, NOTIFICATIONS } from '@/lib/constants';
 import {
   fetchINDAppointments,
   enrichAppointments,
@@ -19,6 +21,10 @@ import {
   APPOINTMENT_SOURCES,
   type AppointmentSource
 } from '@/lib/expat-centers';
+import {
+  fetchAllDigiDAppointments,
+  type DigiDAppointmentWithMetadata
+} from '@/lib/digid-api';
 import { sendNewAppointmentsEmail } from '@/lib/email';
 import { sendPushoverNotification } from '@/lib/notifications';
 
@@ -70,13 +76,271 @@ interface PreferenceConfig {
   user_email: string;
   username: string;
   full_name: string;
+  user_timezone: string;
 }
 
 /**
  * Main function to check for new appointments and send notifications
+ * Uses job lock to prevent overlapping executions
  * @param filterTypes - Optional array of appointment types to check (e.g., ['DOC', 'BIO'])
  */
 export async function checkAndNotifyNewAppointments(filterTypes?: string[]): Promise<{
+  success: boolean;
+  appointmentsFound: number;
+  newAppointments: number;
+  notificationsSent: number;
+  errors: string[];
+}> {
+  const jobName = filterTypes ? `appointment-checker-${filterTypes.join('-')}` : 'appointment-checker';
+
+  // Use job lock to prevent overlapping executions
+  const result = await withJobLock(
+    jobName,
+    async () => doCheckAndNotify(filterTypes),
+    {
+      onLockFailed: () => {
+        console.log(`[APPOINTMENT CHECKER] Job "${jobName}" already running, skipping`);
+      }
+    }
+  );
+
+  // If lock wasn't acquired, return empty result
+  if (result === null) {
+    return {
+      success: true,
+      appointmentsFound: 0,
+      newAppointments: 0,
+      notificationsSent: 0,
+      errors: ['Job already running']
+    };
+  }
+
+  return result;
+}
+
+/**
+ * Check and notify about new DigiD video call appointments
+ * Separate from main checker for aggressive polling during release windows
+ */
+export async function checkDigiDAppointments(): Promise<{
+  success: boolean;
+  appointmentsFound: number;
+  newAppointments: number;
+  notificationsSent: number;
+  errors: string[];
+}> {
+  const jobName = 'digid-checker';
+
+  // Use job lock to prevent overlapping executions
+  const result = await withJobLock(
+    jobName,
+    async () => doCheckDigiD(),
+    {
+      onLockFailed: () => {
+        console.log(`[DIGID CHECKER] Job already running, skipping`);
+      }
+    }
+  );
+
+  // If lock wasn't acquired, return empty result
+  if (result === null) {
+    return {
+      success: true,
+      appointmentsFound: 0,
+      newAppointments: 0,
+      notificationsSent: 0,
+      errors: ['Job already running']
+    };
+  }
+
+  return result;
+}
+
+/**
+ * Internal function that does the DigiD checking (called with job lock held)
+ */
+async function doCheckDigiD(): Promise<{
+  success: boolean;
+  appointmentsFound: number;
+  newAppointments: number;
+  notificationsSent: number;
+  errors: string[];
+}> {
+  const jobId = await logJobStart('digid-checker');
+  const errors: string[] = [];
+  let totalAppointmentsFound = 0;
+  let totalNewAppointments = 0;
+  let totalNotificationsSent = 0;
+
+  try {
+    console.log('[DIGID CHECKER] Starting DigiD video call check...');
+
+    // Get all active user preferences for DGD appointments
+    const preferences = await getActivePreferences();
+    const digidPreferences = preferences.filter(p => p.appointment_type === 'DGD');
+    console.log(`[DIGID CHECKER] Found ${digidPreferences.length} active DigiD preferences`);
+
+    // Fetch all DigiD appointments (all person counts)
+    const allAppointments = await fetchAllDigiDAppointments();
+    totalAppointmentsFound = allAppointments.length;
+
+    if (allAppointments.length === 0) {
+      console.log('[DIGID CHECKER] No DigiD appointments found');
+      await logJobComplete(jobId, totalAppointmentsFound, totalNewAppointments, totalNotificationsSent);
+      return {
+        success: true,
+        appointmentsFound: 0,
+        newAppointments: 0,
+        notificationsSent: 0,
+        errors: []
+      };
+    }
+
+    console.log(`[DIGID CHECKER] Found ${allAppointments.length} DigiD appointments`);
+
+    // Store appointments and get new ones
+    const newAppointments = await storeAppointmentsWithSource(
+      allAppointments as INDAppointmentWithMetadata[],
+      'DIGID'
+    );
+    totalNewAppointments = newAppointments.length;
+
+    if (newAppointments.length > 0) {
+      console.log(`[DIGID CHECKER] ${newAppointments.length} NEW DigiD appointments!`);
+
+      // Broadcast to connected WebSocket clients
+      broadcastNewAppointments(newAppointments, 'DIGID');
+
+      // Group appointments by person count for notification matching
+      const appointmentsByPersons = new Map<number, INDAppointmentWithMetadata[]>();
+      for (const appt of newAppointments) {
+        const persons = appt.persons || 1;
+        if (!appointmentsByPersons.has(persons)) {
+          appointmentsByPersons.set(persons, []);
+        }
+        appointmentsByPersons.get(persons)!.push(appt);
+      }
+
+      // Process notifications for each user with DigiD preferences
+      for (const pref of digidPreferences) {
+        try {
+          // Get appointments matching this user's person count
+          const matchingAppointments = appointmentsByPersons.get(pref.persons) || [];
+          if (matchingAppointments.length === 0) {
+            continue;
+          }
+
+          // Filter by days ahead
+          const userAppointments = filterAppointmentsByDaysAhead(matchingAppointments, pref.days_ahead);
+          if (userAppointments.length === 0) {
+            continue;
+          }
+
+          // Check DND hours
+          if (isWithinDNDHours(pref.dnd_start_time, pref.dnd_end_time, pref.user_timezone)) {
+            console.log(`[DIGID CHECKER] Skipping notification for user ${pref.user_id} - within DND hours`);
+            continue;
+          }
+
+          // Check throttling (use expedited throttling for DigiD since slots go fast)
+          const throttleResult = smartThrottleCheck(pref.last_notification_at, pref.notification_interval, userAppointments);
+          if (!throttleResult.shouldSend) {
+            console.log(`[DIGID CHECKER] Skipping notification for user ${pref.user_id} - interval not reached`);
+            continue;
+          }
+
+          console.log(`[DIGID CHECKER] Sending notification to user ${pref.user_id} with ${userAppointments.length} appointments`);
+
+          // Send email notification
+          if (pref.email_enabled) {
+            const result = await sendNewAppointmentsEmail({
+              userEmail: pref.user_email,
+              userName: pref.full_name || pref.username,
+              appointments: userAppointments.map(a => ({
+                date: a.date,
+                startTime: a.startTime,
+                endTime: a.endTime,
+                appointmentType: a.appointmentTypeName,
+                location: a.locationName
+              })),
+              appointmentType: 'DigiD Video Call',
+              location: 'Online (Video Call)',
+              preferenceId: pref.id
+            });
+
+            if (result.success) {
+              totalNotificationsSent++;
+              await logNotification(pref.user_id, userAppointments[0].key, 'email', true, userAppointments.length);
+            } else {
+              errors.push(`Failed to send email to ${pref.user_email}: ${result.error}`);
+              await logNotification(pref.user_id, userAppointments[0].key, 'email', false, userAppointments.length, result.error);
+            }
+          }
+
+          // Send push notification if enabled
+          if (pref.push_enabled) {
+            const pushMessage = `${userAppointments.length} NEW DigiD video call slot${userAppointments.length > 1 ? 's' : ''} available! Book now before they're gone.`;
+
+            const pushResult = await sendPushoverNotification({
+              userId: pref.user_id,
+              title: 'DigiD Video Call Slots Available!',
+              message: pushMessage,
+              url: 'https://digidafspraak.nederlandwereldwijd.nl/',
+              priority: 1, // High priority for time-sensitive DigiD slots
+            });
+
+            if (pushResult.success) {
+              totalNotificationsSent++;
+              await logNotification(pref.user_id, userAppointments[0].key, 'push', true, userAppointments.length);
+            } else {
+              console.log(`[DIGID CHECKER] Push notification skipped for user ${pref.user_id}: ${pushResult.error}`);
+              await logNotification(pref.user_id, userAppointments[0].key, 'push', false, userAppointments.length, pushResult.error);
+            }
+          }
+
+          // Update last notification timestamp
+          await updateLastNotificationTime(pref.id);
+
+        } catch (error) {
+          const errorMsg = `Error notifying user ${pref.user_id}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          console.error(`[DIGID CHECKER] ${errorMsg}`);
+          errors.push(errorMsg);
+        }
+      }
+    }
+
+    await logJobComplete(jobId, totalAppointmentsFound, totalNewAppointments, totalNotificationsSent);
+
+    console.log('[DIGID CHECKER] Check completed');
+    console.log(`  - Appointments found: ${totalAppointmentsFound}`);
+    console.log(`  - New appointments: ${totalNewAppointments}`);
+    console.log(`  - Notifications sent: ${totalNotificationsSent}`);
+
+    return {
+      success: errors.length === 0,
+      appointmentsFound: totalAppointmentsFound,
+      newAppointments: totalNewAppointments,
+      notificationsSent: totalNotificationsSent,
+      errors
+    };
+  } catch (error) {
+    const errorMsg = `Fatal error in DigiD checker: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    console.error(`[DIGID CHECKER] ${errorMsg}`);
+    await logJobFailed(jobId, errorMsg);
+    return {
+      success: false,
+      appointmentsFound: totalAppointmentsFound,
+      newAppointments: totalNewAppointments,
+      notificationsSent: totalNotificationsSent,
+      errors: [...errors, errorMsg]
+    };
+  }
+}
+
+/**
+ * Internal function that does the actual checking (called with job lock held)
+ */
+async function doCheckAndNotify(filterTypes?: string[]): Promise<{
   success: boolean;
   appointmentsFound: number;
   newAppointments: number;
@@ -122,7 +386,7 @@ export async function checkAndNotifyNewAppointments(filterTypes?: string[]): Pro
         // Add delay every 10 requests to avoid overwhelming the API and reduce memory pressure
         if (i > 0 && i % 10 === 0) {
           console.log(`[APPOINTMENT CHECKER] Processed ${i}/${allCombinations.length} combinations, pausing...`);
-          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second pause
+          await new Promise(resolve => setTimeout(resolve, SCRAPING.IND_API_DELAY_MS));
         }
 
         const appointments = await fetchINDAppointments(
@@ -241,7 +505,7 @@ export async function checkAndNotifyNewAppointments(filterTypes?: string[]): Pro
             }
           }
           // Rate limiting between requests - wait 500ms
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, SCRAPING.EXPAT_CENTER_DELAY_MS));
         }
       }
     } catch (error) {
@@ -297,9 +561,9 @@ export async function checkAndNotifyNewAppointments(filterTypes?: string[]): Pro
 
     for (const [preferenceId, { user, appointments }] of pendingNotifications.entries()) {
       try {
-        // Check if we're in Do Not Disturb hours
-        if (isWithinDNDHours(user.dnd_start_time, user.dnd_end_time)) {
-          console.log(`[APPOINTMENT CHECKER] Skipping notification for user ${user.user_id} - within DND hours (${user.dnd_start_time}-${user.dnd_end_time})`);
+        // Check if we're in Do Not Disturb hours (using user's timezone)
+        if (isWithinDNDHours(user.dnd_start_time, user.dnd_end_time, user.user_timezone)) {
+          console.log(`[APPOINTMENT CHECKER] Skipping notification for user ${user.user_id} - within DND hours (${user.dnd_start_time}-${user.dnd_end_time} ${user.user_timezone})`);
           continue;
         }
 
@@ -410,12 +674,56 @@ export async function checkAndNotifyNewAppointments(filterTypes?: string[]): Pro
   }
 }
 
+// Set of valid IANA timezone names (cached for performance)
+const VALID_TIMEZONES = new Set(Intl.supportedValuesOf('timeZone'));
+
+/**
+ * Validate a timezone string
+ * Returns the timezone if valid, or default if invalid/empty
+ */
+function validateTimezone(timezone: string | null | undefined): string {
+  const DEFAULT_TIMEZONE = 'Europe/Amsterdam';
+
+  if (!timezone || typeof timezone !== 'string' || timezone.trim() === '') {
+    return DEFAULT_TIMEZONE;
+  }
+
+  const normalized = timezone.trim();
+
+  // Check against known valid timezones
+  if (VALID_TIMEZONES.has(normalized)) {
+    return normalized;
+  }
+
+  console.warn(`[DND] Invalid timezone "${timezone}", using default ${DEFAULT_TIMEZONE}`);
+  return DEFAULT_TIMEZONE;
+}
+
 /**
  * Check if current time is within Do Not Disturb hours
+ * Uses the user's timezone to correctly determine DND status
  */
-function isWithinDNDHours(dndStartTime: string, dndEndTime: string): boolean {
-  const now = new Date();
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+function isWithinDNDHours(dndStartTime: string, dndEndTime: string, userTimezone: string = 'Europe/Amsterdam'): boolean {
+  // Validate timezone before using
+  const validTimezone = validateTimezone(userTimezone);
+
+  // Get current time in user's timezone
+  let currentTime: string;
+
+  try {
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: validTimezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    currentTime = formatter.format(new Date());
+  } catch (error) {
+    // Fallback to server time if formatting fails (shouldn't happen with validated timezone)
+    const now = new Date();
+    currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    console.warn(`[DND] Timezone formatting failed for "${validTimezone}", using server time:`, error);
+  }
 
   // If start time is later than end time, DND spans midnight
   if (dndStartTime > dndEndTime) {
@@ -453,17 +761,18 @@ function smartThrottleCheck(
   appointments: INDAppointmentWithMetadata[]
 ): { shouldSend: boolean; isUrgent: boolean; effectiveInterval: number } {
   const now = new Date();
-  const twoDaysFromNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+  const urgentThresholdMs = NOTIFICATIONS.URGENT_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
+  const urgentDeadline = new Date(now.getTime() + urgentThresholdMs);
 
-  // Check if any appointments are urgent (within 2 days)
+  // Check if any appointments are urgent (within threshold days)
   const hasUrgentAppointment = appointments.some(appt => {
     const appointmentDate = new Date(appt.date);
-    return appointmentDate <= twoDaysFromNow;
+    return appointmentDate <= urgentDeadline;
   });
 
   if (hasUrgentAppointment) {
-    // For urgent appointments, use a reduced interval (5 minutes minimum)
-    const urgentInterval = Math.min(intervalMinutes, 5);
+    // For urgent appointments, use a reduced interval
+    const urgentInterval = Math.min(intervalMinutes, NOTIFICATIONS.URGENT_MIN_INTERVAL_MINUTES);
     return {
       shouldSend: hasIntervalPassed(lastNotificationAt, urgentInterval),
       isUrgent: true,
@@ -512,7 +821,8 @@ async function getActivePreferences(): Promise<PreferenceConfig[]> {
       np.last_notification_at,
       u.email as user_email,
       u.username,
-      u.full_name
+      u.full_name,
+      u.timezone as user_timezone
     FROM notification_preferences np
     JOIN users u ON np.user_id = u.id
     WHERE np.is_active = 1
@@ -526,35 +836,37 @@ async function getActivePreferences(): Promise<PreferenceConfig[]> {
 
 /**
  * Store appointments with source information
- * Uses parameterized queries to prevent SQL injection
+ * Uses INSERT OR IGNORE to handle race conditions safely
+ * Uses transactions for atomicity
  */
 async function storeAppointmentsWithSource(appointments: INDAppointmentWithMetadata[], source: AppointmentSource): Promise<INDAppointmentWithMetadata[]> {
   if (appointments.length === 0) {
     return [];
   }
 
+  const newAppointments: INDAppointmentWithMetadata[] = [];
+
   try {
-    const keys = appointments.map(a => a.key);
-    const placeholders = keys.map(() => '?').join(',');
-    const existingQuery = `SELECT appointment_key FROM ind_appointments WHERE appointment_key IN (${placeholders})`;
-    const existingRows = await db.query(existingQuery, keys);
-    const existingKeys = new Set(existingRows.map((row: any) => row.appointment_key));
-
-    const newAppointments = appointments.filter(a => !existingKeys.has(a.key));
-    const existingAppointments = appointments.filter(a => existingKeys.has(a.key));
-
-    // Insert new appointments one by one with parameterized queries (safe from SQL injection)
-    if (newAppointments.length > 0) {
+    // Use transaction for atomicity
+    db.transaction(() => {
+      // Use INSERT OR IGNORE to handle race conditions
+      // This prevents constraint violations if another job inserts the same appointment
       const insertQuery = `
-        INSERT INTO ind_appointments (
+        INSERT OR IGNORE INTO ind_appointments (
           appointment_key, date, start_time, end_time,
           appointment_type, location, location_name, appointment_type_name,
           persons, parts, source, is_available
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
       `;
 
-      for (const appt of newAppointments) {
-        await db.query(insertQuery, [
+      const updateQuery = `
+        UPDATE ind_appointments
+        SET last_seen_at = CURRENT_TIMESTAMP, is_available = 1
+        WHERE appointment_key = ?
+      `;
+
+      for (const appt of appointments) {
+        const result = db.run(insertQuery, [
           appt.key,
           appt.date,
           appt.startTime,
@@ -567,23 +879,19 @@ async function storeAppointmentsWithSource(appointments: INDAppointmentWithMetad
           appt.parts,
           source
         ]);
+
+        if (result.changes > 0) {
+          // Row was inserted (new appointment)
+          newAppointments.push(appt);
+        } else {
+          // Row already exists, update last_seen_at
+          db.run(updateQuery, [appt.key]);
+        }
       }
+    });
+
+    if (newAppointments.length > 0) {
       console.log(`[APPOINTMENT CHECKER] Inserted ${newAppointments.length} new ${source} appointments`);
-    }
-
-    // Batch UPDATE existing appointments (already uses parameterized query)
-    if (existingAppointments.length > 0) {
-      const existingKeysList = existingAppointments.map(a => a.key);
-      const updatePlaceholders = existingKeysList.map(() => '?').join(',');
-      const updateQuery = `
-        UPDATE ind_appointments
-        SET last_seen_at = CURRENT_TIMESTAMP,
-            is_available = 1
-        WHERE appointment_key IN (${updatePlaceholders})
-      `;
-
-      await db.query(updateQuery, existingKeysList);
-      console.log(`[APPOINTMENT CHECKER] Batch updated ${existingAppointments.length} existing ${source} appointments`);
     }
 
     return newAppointments;
@@ -595,37 +903,37 @@ async function storeAppointmentsWithSource(appointments: INDAppointmentWithMetad
 
 /**
  * Store appointments in database and return only new ones
- * Uses parameterized queries to prevent SQL injection
+ * Uses INSERT OR IGNORE to handle race conditions safely
+ * Uses transactions for atomicity
  */
 async function storeAppointments(appointments: INDAppointmentWithMetadata[]): Promise<INDAppointmentWithMetadata[]> {
   if (appointments.length === 0) {
     return [];
   }
 
+  const newAppointments: INDAppointmentWithMetadata[] = [];
+
   try {
-    // Step 1: Get all existing appointment keys in ONE query
-    const keys = appointments.map(a => a.key);
-    const placeholders = keys.map(() => '?').join(',');
-    const existingQuery = `SELECT appointment_key FROM ind_appointments WHERE appointment_key IN (${placeholders})`;
-    const existingRows = await db.query(existingQuery, keys);
-    const existingKeys = new Set(existingRows.map((row: any) => row.appointment_key));
-
-    // Step 2: Separate new vs existing appointments in memory
-    const newAppointments = appointments.filter(a => !existingKeys.has(a.key));
-    const existingAppointments = appointments.filter(a => existingKeys.has(a.key));
-
-    // Step 3: Insert new appointments with parameterized queries (safe from SQL injection)
-    if (newAppointments.length > 0) {
+    // Use transaction for atomicity
+    db.transaction(() => {
+      // Use INSERT OR IGNORE to handle race conditions
+      // This prevents constraint violations if another job inserts the same appointment
       const insertQuery = `
-        INSERT INTO ind_appointments (
+        INSERT OR IGNORE INTO ind_appointments (
           appointment_key, date, start_time, end_time,
           appointment_type, location, location_name, appointment_type_name,
           persons, parts, source, is_available
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
       `;
 
-      for (const appt of newAppointments) {
-        await db.query(insertQuery, [
+      const updateQuery = `
+        UPDATE ind_appointments
+        SET last_seen_at = CURRENT_TIMESTAMP, is_available = 1
+        WHERE appointment_key = ?
+      `;
+
+      for (const appt of appointments) {
+        const result = db.run(insertQuery, [
           appt.key,
           appt.date,
           appt.startTime,
@@ -638,85 +946,26 @@ async function storeAppointments(appointments: INDAppointmentWithMetadata[]): Pr
           appt.parts,
           'IND'
         ]);
+
+        if (result.changes > 0) {
+          // Row was inserted (new appointment)
+          newAppointments.push(appt);
+        } else {
+          // Row already exists, update last_seen_at
+          db.run(updateQuery, [appt.key]);
+        }
       }
+    });
+
+    if (newAppointments.length > 0) {
       console.log(`[APPOINTMENT CHECKER] Inserted ${newAppointments.length} new appointments`);
-    }
-
-    // Step 4: Batch UPDATE existing appointments (already uses parameterized query)
-    if (existingAppointments.length > 0) {
-      const existingKeysList = existingAppointments.map(a => a.key);
-      const updatePlaceholders = existingKeysList.map(() => '?').join(',');
-      const updateQuery = `
-        UPDATE ind_appointments
-        SET last_seen_at = CURRENT_TIMESTAMP,
-            is_available = 1
-        WHERE appointment_key IN (${updatePlaceholders})
-      `;
-
-      await db.query(updateQuery, existingKeysList);
-      console.log(`[APPOINTMENT CHECKER] Batch updated ${existingAppointments.length} existing appointments`);
     }
 
     return newAppointments;
   } catch (error) {
     console.error(`[APPOINTMENT CHECKER] Error in store:`, error);
-    // Fallback to individual inserts if batch fails
-    console.log(`[APPOINTMENT CHECKER] Falling back to individual inserts...`);
-    return await storeAppointmentsIndividually(appointments);
+    return [];
   }
-}
-
-/**
- * Fallback function for individual appointment storage (in case batch fails)
- */
-async function storeAppointmentsIndividually(appointments: INDAppointmentWithMetadata[]): Promise<INDAppointmentWithMetadata[]> {
-  const newAppointments: INDAppointmentWithMetadata[] = [];
-
-  for (const appt of appointments) {
-    try {
-      const existingQuery = 'SELECT id FROM ind_appointments WHERE appointment_key = ?';
-      const existing = await db.query(existingQuery, [appt.key]);
-
-      if (existing.length === 0) {
-        const insertQuery = `
-          INSERT INTO ind_appointments (
-            appointment_key, date, start_time, end_time,
-            appointment_type, location, location_name, appointment_type_name,
-            persons, parts, source, is_available
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-        `;
-
-        await db.query(insertQuery, [
-          appt.key,
-          appt.date,
-          appt.startTime,
-          appt.endTime,
-          appt.appointmentType,
-          appt.location,
-          appt.locationName,
-          appt.appointmentTypeName,
-          appt.persons,
-          appt.parts,
-          'IND'
-        ]);
-
-        newAppointments.push(appt);
-      } else {
-        const updateQuery = `
-          UPDATE ind_appointments
-          SET last_seen_at = CURRENT_TIMESTAMP,
-              is_available = 1
-          WHERE appointment_key = ?
-        `;
-
-        await db.query(updateQuery, [appt.key]);
-      }
-    } catch (error) {
-      console.error(`[APPOINTMENT CHECKER] Error storing appointment ${appt.key}:`, error);
-    }
-  }
-
-  return newAppointments;
 }
 
 /**

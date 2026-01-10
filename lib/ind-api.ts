@@ -47,6 +47,11 @@ export const APPOINTMENT_TYPE_CONFIG = {
     name: 'Family Reunification',
     fullName: 'Family Reunification Asylum',
     availableLocations: ['AM', 'DH', 'DEN_L14', 'DEN_M222', 'ZW']
+  },
+  DGD: {
+    name: 'DigiD Video Call',
+    fullName: 'DigiD Video Call Activation',
+    availableLocations: ['DIGID_VC']
   }
 } as const;
 
@@ -56,7 +61,8 @@ export const APPOINTMENT_TYPES = {
   VAA: 'Residence Endorsement Sticker',
   TKV: 'Return Visa',
   UKR: 'Ukraine Proof of Residency',
-  FAM: 'Family Reunification'
+  FAM: 'Family Reunification',
+  DGD: 'DigiD Video Call'
 } as const;
 
 export const LOCATIONS = {

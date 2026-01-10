@@ -1,11 +1,15 @@
 // Cron Scheduler - Manages scheduled tasks for the IND Appointments application
 
 import cron, { ScheduledTask } from 'node-cron';
-import { checkAndNotifyNewAppointments } from '@/lib/appointment-checker';
+import { checkAndNotifyNewAppointments, checkDigiDAppointments } from '@/lib/appointment-checker';
+import { isInReleaseWindow, getNextReleaseWindowString } from '@/lib/digid-api';
+import { DIGID } from '@/lib/constants';
 
 class CronScheduler {
   private jobs: Map<string, ScheduledTask> = new Map();
   private isRunning: boolean = false;
+  private digidAggressiveInterval: NodeJS.Timeout | null = null;
+  private digidAggressiveStopTimeout: NodeJS.Timeout | null = null;
 
   /**
    * Initialize and start all cron jobs
@@ -111,6 +115,71 @@ class CronScheduler {
 
     this.jobs.set('health-check', healthCheckJob);
 
+    // ==========================================================================
+    // DIGID VIDEO CALL SCHEDULING
+    // ==========================================================================
+    console.log('[CRON] Setting up DigiD video call scheduling:');
+    console.log('[CRON]   - Normal polling: every 30 minutes');
+    console.log('[CRON]   - Aggressive polling: every 30 seconds during Friday release windows');
+    console.log(`[CRON]   - ${getNextReleaseWindowString()}`);
+
+    // DIGID Normal polling - every 30 minutes (skip during release windows)
+    const digidNormalJob = cron.schedule(
+      '*/30 * * * *',
+      async () => {
+        // Skip if we're in a release window (aggressive polling handles it)
+        if (isInReleaseWindow()) {
+          console.log('[CRON] Skipping normal DigiD check - release window active');
+          return;
+        }
+
+        console.log('[CRON] Running DigiD normal polling...');
+        try {
+          const result = await checkDigiDAppointments();
+          if (result.success) {
+            console.log(`[CRON] DigiD check completed: ${result.newAppointments} new appointments`);
+          } else {
+            console.error('[CRON] DigiD check completed with errors:', result.errors);
+          }
+        } catch (error) {
+          console.error('[CRON] Error running DigiD check:', error);
+        }
+      },
+      {
+        timezone: 'Europe/Amsterdam'
+      }
+    );
+
+    this.jobs.set('digid-normal', digidNormalJob);
+
+    // DIGID Friday 9:00 release window - start aggressive polling
+    const digidMorningReleaseJob = cron.schedule(
+      '0 9 * * 5', // Friday at 9:00
+      () => {
+        console.log('[CRON] Friday 9:00 release window - starting aggressive DigiD polling');
+        this.startAggressiveDigiDPolling();
+      },
+      {
+        timezone: 'Europe/Amsterdam'
+      }
+    );
+
+    this.jobs.set('digid-morning-release', digidMorningReleaseJob);
+
+    // DIGID Friday 14:00 release window - start aggressive polling
+    const digidAfternoonReleaseJob = cron.schedule(
+      '0 14 * * 5', // Friday at 14:00
+      () => {
+        console.log('[CRON] Friday 14:00 release window - starting aggressive DigiD polling');
+        this.startAggressiveDigiDPolling();
+      },
+      {
+        timezone: 'Europe/Amsterdam'
+      }
+    );
+
+    this.jobs.set('digid-afternoon-release', digidAfternoonReleaseJob);
+
     this.isRunning = true;
     console.log('[CRON] Scheduler started successfully');
     console.log(`[CRON] Active jobs: ${Array.from(this.jobs.keys()).join(', ')}`);
@@ -123,8 +192,70 @@ class CronScheduler {
       }),
       checkAndNotifyNewAppointments(['VAA', 'TKV', 'UKR', 'FAM']).catch(error => {
         console.error('[CRON] Error in initial low-priority check:', error);
+      }),
+      checkDigiDAppointments().catch(error => {
+        console.error('[CRON] Error in initial DigiD check:', error);
       })
     ]);
+
+    // Check if we're currently in a release window on startup
+    if (isInReleaseWindow()) {
+      console.log('[CRON] Currently in DigiD release window - starting aggressive polling');
+      this.startAggressiveDigiDPolling();
+    }
+  }
+
+  /**
+   * Start aggressive DigiD polling for release windows
+   * Polls every 30 seconds for 30 minutes
+   */
+  private startAggressiveDigiDPolling(): void {
+    // Don't start if already running
+    if (this.digidAggressiveInterval) {
+      console.log('[CRON] Aggressive DigiD polling already active');
+      return;
+    }
+
+    console.log('[CRON] Starting aggressive DigiD polling (every 30 seconds)...');
+
+    // Run immediately
+    checkDigiDAppointments().catch(error => {
+      console.error('[CRON] Error in aggressive DigiD check:', error);
+    });
+
+    // Then run every 30 seconds
+    this.digidAggressiveInterval = setInterval(async () => {
+      console.log('[CRON] Running aggressive DigiD check...');
+      try {
+        const result = await checkDigiDAppointments();
+        if (result.success && result.newAppointments > 0) {
+          console.log(`[CRON] AGGRESSIVE DigiD: Found ${result.newAppointments} NEW appointments!`);
+        }
+      } catch (error) {
+        console.error('[CRON] Error in aggressive DigiD check:', error);
+      }
+    }, DIGID.AGGRESSIVE_POLL_INTERVAL_SECONDS * 1000);
+
+    // Schedule stop after the aggressive polling duration
+    this.digidAggressiveStopTimeout = setTimeout(() => {
+      this.stopAggressiveDigiDPolling();
+    }, DIGID.AGGRESSIVE_POLL_DURATION_MINUTES * 60 * 1000);
+  }
+
+  /**
+   * Stop aggressive DigiD polling
+   */
+  private stopAggressiveDigiDPolling(): void {
+    if (this.digidAggressiveInterval) {
+      clearInterval(this.digidAggressiveInterval);
+      this.digidAggressiveInterval = null;
+      console.log('[CRON] Stopped aggressive DigiD polling');
+    }
+
+    if (this.digidAggressiveStopTimeout) {
+      clearTimeout(this.digidAggressiveStopTimeout);
+      this.digidAggressiveStopTimeout = null;
+    }
   }
 
   /**
@@ -137,6 +268,9 @@ class CronScheduler {
     }
 
     console.log('[CRON] Stopping scheduler...');
+
+    // Stop aggressive DigiD polling if active
+    this.stopAggressiveDigiDPolling();
 
     for (const [name, job] of this.jobs) {
       job.stop();
@@ -154,6 +288,28 @@ class CronScheduler {
   public async triggerAppointmentCheck(): Promise<any> {
     console.log('[CRON] Manually triggering appointment check...');
     return await checkAndNotifyNewAppointments();
+  }
+
+  /**
+   * Manually trigger the DigiD appointment checker
+   */
+  public async triggerDigiDCheck(): Promise<any> {
+    console.log('[CRON] Manually triggering DigiD check...');
+    return await checkDigiDAppointments();
+  }
+
+  /**
+   * Manually start aggressive DigiD polling (for testing)
+   */
+  public startAggressivePolling(): void {
+    this.startAggressiveDigiDPolling();
+  }
+
+  /**
+   * Check if aggressive DigiD polling is currently active
+   */
+  public isAggressivePollingActive(): boolean {
+    return this.digidAggressiveInterval !== null;
   }
 
   /**
@@ -205,10 +361,23 @@ class CronScheduler {
   /**
    * Get status of all jobs
    */
-  public getStatus(): { isRunning: boolean; jobs: string[] } {
+  public getStatus(): {
+    isRunning: boolean;
+    jobs: string[];
+    digid: {
+      aggressivePollingActive: boolean;
+      inReleaseWindow: boolean;
+      nextReleaseWindow: string;
+    };
+  } {
     return {
       isRunning: this.isRunning,
-      jobs: Array.from(this.jobs.keys())
+      jobs: Array.from(this.jobs.keys()),
+      digid: {
+        aggressivePollingActive: this.isAggressivePollingActive(),
+        inReleaseWindow: isInReleaseWindow(),
+        nextReleaseWindow: getNextReleaseWindowString(),
+      }
     };
   }
 }

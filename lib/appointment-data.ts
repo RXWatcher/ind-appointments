@@ -67,6 +67,14 @@ export const APPOINTMENT_TYPES: AppointmentType[] = [
     bookingUrl: 'https://oap.ind.nl/oap/en/#/fam',
     description: 'Registration of traveling family member at the IND desk',
     availableLocations: ['AM', 'DH', 'DEN_L14', 'DEN_M222', 'ZW']
+  },
+  {
+    value: 'DGD',
+    label: 'DigiD Video Call',
+    fullName: 'DigiD Video Call Activation',
+    bookingUrl: 'https://digidafspraak.nederlandwereldwijd.nl/',
+    description: 'Activate your DigiD via video call from abroad. Appointments released Fridays at 9:00 & 14:00 Amsterdam time.',
+    availableLocations: ['DIGID_VC']
   }
 ];
 
@@ -140,6 +148,12 @@ export const LOCATIONS: Location[] = [
     label: 'Rotterdam International Center',
     fullName: 'Rotterdam International Center',
     address: 'Appointments for biometrics, document collection, and BSN registration'
+  },
+  {
+    value: 'DIGID_VC',
+    label: 'DigiD Video Call',
+    fullName: 'DigiD Video Call (Online)',
+    address: 'Video call appointment - no physical location. For Dutch citizens abroad to activate DigiD.'
   }
 ];
 

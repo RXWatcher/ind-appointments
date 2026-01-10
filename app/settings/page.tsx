@@ -283,7 +283,7 @@ function SettingsForm() {
                   type="email"
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white min-h-[44px]"
                   placeholder="Enter new email address"
                 />
                 <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
@@ -294,7 +294,7 @@ function SettingsForm() {
                 <button
                   onClick={handleChangeEmail}
                   disabled={changingEmail || !newEmail}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed min-h-[44px]"
                 >
                   {changingEmail ? 'Requesting Change...' : 'Change Email'}
                 </button>
@@ -320,7 +320,7 @@ function SettingsForm() {
                   href="https://pushover.net"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 font-medium"
+                  className="px-4 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 active:bg-blue-800 font-medium min-h-[44px]"
                 >
                   Sign Up for Pushover
                 </a>
@@ -346,7 +346,7 @@ function SettingsForm() {
                   type="text"
                   value={credentials.pushover_user_key || ''}
                   onChange={(e) => setCredentials({ ...credentials, pushover_user_key: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white min-h-[44px]"
                   placeholder="Enter your Pushover User Key"
                 />
                 <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
@@ -373,7 +373,7 @@ function SettingsForm() {
                 <select
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white min-h-[44px]"
                 >
                   {timezones.map((tz) => (
                     <option key={tz} value={tz}>
@@ -415,7 +415,7 @@ function SettingsForm() {
                   type="text"
                   value={credentials.whatsapp_phone_number || ''}
                   onChange={(e) => setCredentials({ ...credentials, whatsapp_phone_number: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white min-h-[44px]"
                   placeholder="+31612345678"
                 />
                 <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
@@ -440,7 +440,7 @@ function SettingsForm() {
                   type="password"
                   value={passwordData.currentPassword}
                   onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white min-h-[44px]"
                   placeholder="Enter current password"
                 />
               </div>
@@ -452,7 +452,7 @@ function SettingsForm() {
                   type="password"
                   value={passwordData.newPassword}
                   onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white min-h-[44px]"
                   placeholder="Enter new password (min 8 characters)"
                 />
               </div>
@@ -464,7 +464,7 @@ function SettingsForm() {
                   type="password"
                   value={passwordData.confirmPassword}
                   onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white min-h-[44px]"
                   placeholder="Confirm new password"
                 />
               </div>
@@ -472,7 +472,7 @@ function SettingsForm() {
                 <button
                   onClick={handleChangePassword}
                   disabled={changingPassword || !passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed min-h-[44px]"
                 >
                   {changingPassword ? 'Changing Password...' : 'Change Password'}
                 </button>
