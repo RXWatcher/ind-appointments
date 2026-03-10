@@ -12,6 +12,22 @@ interface AdminStats {
   recentJobs: Array<{ job_name: string; status: string; started_at: string; duration_ms: number; appointments_found: number }>;
 }
 
+function StatCard({ title, value, icon, color, trend }: { title: string; value: number | string; icon: string; color: string; trend?: string }) {
+  return (
+    <div className="glass-card glass-card-hover p-4 relative overflow-hidden">
+      <div className="absolute top-0 right-0 w-20 h-20 rounded-full -mr-6 -mt-6 opacity-10" style={{ background: color }} />
+      <div className="relative">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xl">{icon}</span>
+          <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{title}</span>
+        </div>
+        <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{value}</div>
+        {trend && <div className="text-[11px] text-green-600 dark:text-green-400 mt-0.5">{trend}</div>}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
@@ -21,36 +37,21 @@ export default function AdminPage() {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-
+    if (!token) { router.push('/login'); return; }
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
-      if (payload.role !== 'admin') {
-        router.push('/');
-        return;
-      }
+      if (payload.role !== 'admin') { router.push('/'); return; }
       setUser(payload);
       fetchAdminStats(token);
-    } catch (e) {
-      router.push('/login');
-    }
+    } catch { router.push('/login'); }
   }, [router]);
 
   const fetchAdminStats = async (token: string) => {
     try {
-      const response = await fetch('/api/admin/stats', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (data.success) {
-        setStats(data.data);
-      }
-    } catch (error) {
-      console.error('Error fetching admin stats:', error);
-    }
+      const res = await fetch('/api/admin/stats', { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (data.success) setStats(data.data);
+    } catch (e) { console.error(e); }
     setLoading(false);
   };
 
@@ -58,183 +59,111 @@ export default function AdminPage() {
     setTriggering(true);
     const token = localStorage.getItem('token');
     if (!token) return;
-
     try {
-      const response = await fetch('/api/appointments', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      alert(data.success ? 'Scraper triggered successfully!' : 'Failed to trigger scraper');
+      const res = await fetch('/api/appointments', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      alert(data.success ? 'Scraper triggered!' : 'Failed');
       fetchAdminStats(token);
-    } catch (error) {
-      alert('Error triggering scraper');
-    }
+    } catch { alert('Error'); }
     setTriggering(false);
   };
 
   if (!user || loading) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      <header className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-purple-700 via-blue-700 to-blue-600" />
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-blue-600">Admin Dashboard</h1>
-              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">System administration and monitoring</p>
+              <h1 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">⚡ Admin Dashboard</h1>
+              <p className="text-[11px] text-purple-200">System monitoring</p>
             </div>
-            <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
-              <Link
-                href="/"
-                className="px-3 sm:px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 font-medium min-h-[44px] flex items-center"
-              >
-                View Site
-              </Link>
-              <span className="text-sm text-gray-600 dark:text-gray-400">{user.username}</span>
+            <div className="flex items-center gap-3">
+              <Link href="/" className="text-sm text-purple-100 hover:text-white min-h-[44px] flex items-center">View Site</Link>
+              <span className="text-sm text-purple-200">{user.username}</span>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900 rounded-full p-3">
-                <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Total Users</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats?.totalUsers || 0}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-green-100 dark:bg-green-900 rounded-full p-3">
-                <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Total Appointments</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats?.totalAppointments || 0}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-purple-100 dark:bg-purple-900 rounded-full p-3">
-                <svg className="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Active Alerts</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats?.totalPreferences || 0}</p>
-              </div>
-            </div>
-          </div>
+      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
+          <StatCard title="Users" value={stats?.totalUsers || 0} icon="👥" color="#3b82f6" />
+          <StatCard title="Appointments" value={stats?.totalAppointments || 0} icon="📅" color="#22c55e" />
+          <StatCard title="Active Alerts" value={stats?.totalPreferences || 0} icon="🔔" color="#8b5cf6" />
         </div>
 
         {/* Actions */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 sm:p-6 mb-8">
-          <h2 className="text-base sm:text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100">Quick Actions</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <button
-              onClick={handleTriggerScraper}
-              disabled={triggering}
-              className="px-4 py-3 bg-blue-600 text-white text-sm sm:text-base rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50 min-h-[44px] w-full"
-            >
-              {triggering ? 'Triggering...' : '🔄 Trigger Manual Scrape'}
+        <div className="glass-card p-4 mb-6">
+          <h2 className="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100">Quick Actions</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            <button onClick={handleTriggerScraper} disabled={triggering}
+              className="px-4 py-3 bg-blue-600 text-white text-sm rounded-xl hover:bg-blue-700 font-medium disabled:opacity-50 min-h-[44px] w-full transition-colors">
+              {triggering ? '⏳ Running...' : '🔄 Manual Scrape'}
             </button>
-            <Link
-              href="/admin/users"
-              className="px-4 py-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm sm:text-base rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 font-medium text-center min-h-[44px] flex items-center justify-center w-full"
-            >
-              👥 Manage Users
+            <Link href="/admin/users"
+              className="px-4 py-3 glass-card text-gray-700 dark:text-gray-300 text-sm rounded-xl hover:bg-gray-100/50 dark:hover:bg-gray-700/50 font-medium text-center min-h-[44px] flex items-center justify-center">
+              👥 Users
             </Link>
-            <Link
-              href="/admin/notifications"
-              className="px-4 py-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm sm:text-base rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 font-medium text-center min-h-[44px] flex items-center justify-center w-full"
-            >
-              ⚙️ Notification Settings
+            <Link href="/admin/notifications"
+              className="px-4 py-3 glass-card text-gray-700 dark:text-gray-300 text-sm rounded-xl hover:bg-gray-100/50 dark:hover:bg-gray-700/50 font-medium text-center min-h-[44px] flex items-center justify-center">
+              ⚙️ Notifications
             </Link>
-            <Link
-              href="/admin/content-zones"
-              className="px-4 py-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm sm:text-base rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 font-medium text-center min-h-[44px] flex items-center justify-center w-full"
-            >
+            <Link href="/admin/content-zones"
+              className="px-4 py-3 glass-card text-gray-700 dark:text-gray-300 text-sm rounded-xl hover:bg-gray-100/50 dark:hover:bg-gray-700/50 font-medium text-center min-h-[44px] flex items-center justify-center">
               📢 Content Zones
             </Link>
           </div>
         </div>
 
         {/* Recent Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Recent Users */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Users</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="glass-card overflow-hidden">
+            <div className="p-4 border-b border-gray-200/50 dark:border-gray-700/50">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Recent Users</h2>
             </div>
-            <div className="divide-y divide-gray-200 dark:divide-gray-700">
-              {stats?.recentUsers && stats.recentUsers.length > 0 ? (
-                stats.recentUsers.map((u, i) => (
-                  <div key={i} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">{u.username}</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">{u.email}</p>
-                      </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {new Date(u.created_at).toLocaleDateString()}
-                      </p>
+            <div className="divide-y divide-gray-200/50 dark:divide-gray-700/50">
+              {stats?.recentUsers?.length ? stats.recentUsers.map((u, i) => (
+                <div key={i} className="p-3 hover:bg-gray-50/50 dark:hover:bg-gray-700/30">
+                  <div className="flex justify-between items-start">
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">{u.username}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{u.email}</p>
                     </div>
+                    <p className="text-[10px] text-gray-400 flex-shrink-0 ml-2">{new Date(u.created_at).toLocaleDateString()}</p>
                   </div>
-                ))
-              ) : (
-                <p className="p-4 text-gray-500 dark:text-gray-400">No users yet</p>
-              )}
+                </div>
+              )) : <p className="p-4 text-xs text-gray-500">No users yet</p>}
             </div>
           </div>
 
-          {/* Recent Scraper Jobs */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Scraper Jobs</h2>
+          <div className="glass-card overflow-hidden">
+            <div className="p-4 border-b border-gray-200/50 dark:border-gray-700/50">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Recent Scraper Jobs</h2>
             </div>
-            <div className="divide-y divide-gray-200 dark:divide-gray-700">
-              {stats?.recentJobs && stats.recentJobs.length > 0 ? (
-                stats.recentJobs.map((job, i) => (
-                  <div key={i} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">{job.job_name}</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          {job.appointments_found} appointments found
-                        </p>
-                      </div>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        job.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {job.status}
-                      </span>
+            <div className="divide-y divide-gray-200/50 dark:divide-gray-700/50">
+              {stats?.recentJobs?.length ? stats.recentJobs.map((job, i) => (
+                <div key={i} className="p-3 hover:bg-gray-50/50 dark:hover:bg-gray-700/30">
+                  <div className="flex justify-between items-start mb-1">
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">{job.job_name}</p>
+                      <p className="text-xs text-gray-500">{job.appointments_found} found</p>
                     </div>
-                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                      <span>{new Date(job.started_at).toLocaleString()}</span>
-                      <span>{(job.duration_ms / 1000).toFixed(1)}s</span>
-                    </div>
+                    <span className={`px-2 py-0.5 text-[10px] rounded-full flex-shrink-0 ${
+                      job.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                      : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
+                      {job.status}
+                    </span>
                   </div>
-                ))
-              ) : (
-                <p className="p-4 text-gray-500 dark:text-gray-400">No jobs yet</p>
-              )}
+                  <div className="flex justify-between text-[10px] text-gray-400">
+                    <span>{new Date(job.started_at).toLocaleString()}</span>
+                    <span>{(job.duration_ms / 1000).toFixed(1)}s</span>
+                  </div>
+                </div>
+              )) : <p className="p-4 text-xs text-gray-500">No jobs yet</p>}
             </div>
           </div>
         </div>

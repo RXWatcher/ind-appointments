@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { db } from '@/lib/database';
 import { security } from '@/lib/security';
+import logger from '@/lib/logger';
 
 export async function getSmtpSettings() {
   // Try to get settings from database first, fall back to environment variables
@@ -30,7 +31,7 @@ export async function getSmtpSettings() {
       };
     }
   } catch (error) {
-    console.log('[EMAIL] Database settings not found, falling back to environment variables');
+    logger.info('[EMAIL] Database settings not found, falling back to environment variables');
   }
 
   // Fall back to environment variables
@@ -199,10 +200,10 @@ export async function sendNewAppointmentsEmail(data: NewAppointmentsEmailData) {
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log(`Email sent to ${data.userEmail}:`, result.messageId);
+    logger.info(`Email sent to ${data.userEmail}:`, result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending email:', error);
+    logger.error('Error sending email', { error });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
@@ -298,10 +299,10 @@ export async function sendVerificationEmail(userEmail: string, userName: string,
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log(`Verification email sent to ${userEmail}:`, result.messageId);
+    logger.info(`Verification email sent to ${userEmail}:`, result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending verification email:', error);
+    logger.error('Error sending verification email', { error });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
@@ -375,10 +376,10 @@ export async function sendWelcomeEmail(userEmail: string, userName: string) {
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log(`Welcome email sent to ${userEmail}:`, result.messageId);
+    logger.info(`Welcome email sent to ${userEmail}:`, result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending welcome email:', error);
+    logger.error('Error sending welcome email', { error });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
@@ -468,10 +469,10 @@ export async function sendPasswordResetEmail(userEmail: string, userName: string
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log(`Password reset email sent to ${userEmail}:`, result.messageId);
+    logger.info(`Password reset email sent to ${userEmail}:`, result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending password reset email:', error);
+    logger.error('Error sending password reset email', { error });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
@@ -551,10 +552,10 @@ export async function sendEmailChangeVerificationEmail(newEmail: string, userNam
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log(`Email change verification sent to ${newEmail}:`, result.messageId);
+    logger.info(`Email change verification sent to ${newEmail}:`, result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending email change verification:', error);
+    logger.error('Error sending email change verification', { error });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
@@ -630,10 +631,10 @@ export async function sendEmailChangeNotificationEmail(oldEmail: string, userNam
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log(`Email change notification sent to ${oldEmail}:`, result.messageId);
+    logger.info(`Email change notification sent to ${oldEmail}`, { messageId: result.messageId });
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending email change notification:', error);
+    logger.error('Error sending email change notification', { error });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
@@ -705,10 +706,10 @@ export async function sendEmailChangeConfirmationEmail(newEmail: string, oldEmai
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log(`Email change confirmation sent to ${newEmail}:`, result.messageId);
+    logger.info(`Email change confirmation sent to ${newEmail}`, { messageId: result.messageId });
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('Error sending email change confirmation:', error);
+    logger.error('Error sending email change confirmation', { error });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }

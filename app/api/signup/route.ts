@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
 import { db } from '@/lib/database';
 import { sendVerificationEmail } from '@/lib/email';
 import { rateLimit } from '@/lib/rate-limit';
 import { security } from '@/lib/security';
+import logger from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
   try {
@@ -75,11 +74,11 @@ export async function POST(request: NextRequest) {
       suffix++;
     }
 
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
+    // Hash password using centralized security module
+    const passwordHash = await security.hashPassword(password);
 
-    // Generate verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
+    // Generate verification token using centralized security module
+    const verificationToken = security.generateSecureToken();
 
     // Create user
     const insertQuery = `
@@ -103,7 +102,7 @@ export async function POST(request: NextRequest) {
     try {
       await sendVerificationEmail(email, fullName || email.split('@')[0], verificationToken);
     } catch (emailError) {
-      console.error('Error sending verification email:', emailError);
+      logger.error('Error sending verification email', { email, error: emailError });
       // Don't fail signup if email fails - user can request resend later
     }
 
@@ -117,7 +116,7 @@ export async function POST(request: NextRequest) {
       }
     });
   } catch (error) {
-    console.error('Signup error:', error);
+    logger.error('Signup error', { error });
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }

@@ -33,12 +33,13 @@ CREATE TABLE IF NOT EXISTS ind_appointments (
   date DATE NOT NULL,
   start_time TIME NOT NULL,
   end_time TIME NOT NULL,
-  appointment_type TEXT NOT NULL CHECK(appointment_type IN ('BIO', 'DOC', 'VAA', 'TKV', 'UKR', 'FAM')),
+  appointment_type TEXT NOT NULL CHECK(appointment_type IN ('BIO', 'DOC', 'VAA', 'TKV', 'UKR', 'FAM', 'DGD')),
   location TEXT NOT NULL,
   location_name TEXT NOT NULL,
   appointment_type_name TEXT NOT NULL,
   persons INTEGER DEFAULT 1,
   parts INTEGER DEFAULT 1,
+  source TEXT DEFAULT 'IND' CHECK(source IN ('IND', 'THE_HAGUE_IC', 'ROTTERDAM_IC', 'DIGID')),
   first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   is_available INTEGER DEFAULT 1
@@ -50,6 +51,11 @@ CREATE INDEX IF NOT EXISTS idx_appointments_location ON ind_appointments(locatio
 CREATE INDEX IF NOT EXISTS idx_appointments_available ON ind_appointments(is_available);
 CREATE INDEX IF NOT EXISTS idx_appointments_key ON ind_appointments(appointment_key);
 CREATE INDEX IF NOT EXISTS idx_appointments_composite ON ind_appointments(appointment_type, location, date, is_available);
+CREATE INDEX IF NOT EXISTS idx_appointments_source ON ind_appointments(source);
+-- Optimized index for common query pattern (available appointments sorted by date)
+CREATE INDEX IF NOT EXISTS idx_appointments_listing ON ind_appointments(is_available, date, start_time) WHERE is_available = 1;
+-- Index for scraper updates
+CREATE INDEX IF NOT EXISTS idx_appointments_last_seen ON ind_appointments(last_seen_at, is_available);
 
 -- Notification Preferences table
 -- location can be:
@@ -126,6 +132,22 @@ CREATE TABLE IF NOT EXISTS user_notification_credentials (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_notif_creds_user_id ON user_notification_credentials(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_notif_creds_telegram ON user_notification_credentials(telegram_chat_id);
+
+-- Telegram Link Tokens table (for account linking)
+-- Stores HASHED tokens for security
+CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_telegram_link_user_id ON telegram_link_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_telegram_link_token_hash ON telegram_link_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_telegram_link_expires ON telegram_link_tokens(expires_at);
 
 -- Cron Job Log table
 CREATE TABLE IF NOT EXISTS cron_job_log (

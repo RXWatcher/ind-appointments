@@ -1,6 +1,7 @@
 // Appointment Checker Service - Core logic for checking and notifying about new appointments
 
 import { db } from '@/lib/database';
+import logger from '@/lib/logger';
 import { withJobLock } from '@/lib/job-lock';
 import { SCRAPING, NOTIFICATIONS } from '@/lib/constants';
 import {
@@ -56,7 +57,7 @@ function broadcastNewAppointments(appointments: INDAppointmentWithMetadata[], so
       });
     }
   } catch (error) {
-    console.error('[WS BROADCAST] Error broadcasting new appointments:', error);
+    logger.error('[WS BROADCAST] Error broadcasting new appointments:', error);
   }
 }
 
@@ -99,7 +100,7 @@ export async function checkAndNotifyNewAppointments(filterTypes?: string[]): Pro
     async () => doCheckAndNotify(filterTypes),
     {
       onLockFailed: () => {
-        console.log(`[APPOINTMENT CHECKER] Job "${jobName}" already running, skipping`);
+        logger.info(`[APPOINTMENT CHECKER] Job "${jobName}" already running, skipping`);
       }
     }
   );
@@ -137,7 +138,7 @@ export async function checkDigiDAppointments(): Promise<{
     async () => doCheckDigiD(),
     {
       onLockFailed: () => {
-        console.log(`[DIGID CHECKER] Job already running, skipping`);
+        logger.info('[DIGID CHECKER] Job already running, skipping');
       }
     }
   );
@@ -173,19 +174,19 @@ async function doCheckDigiD(): Promise<{
   let totalNotificationsSent = 0;
 
   try {
-    console.log('[DIGID CHECKER] Starting DigiD video call check...');
+    logger.info('[DIGID CHECKER] Starting DigiD video call check...');
 
     // Get all active user preferences for DGD appointments
     const preferences = await getActivePreferences();
     const digidPreferences = preferences.filter(p => p.appointment_type === 'DGD');
-    console.log(`[DIGID CHECKER] Found ${digidPreferences.length} active DigiD preferences`);
+    logger.info(`[DIGID CHECKER] Found ${digidPreferences.length} active DigiD preferences`);
 
     // Fetch all DigiD appointments (all person counts)
     const allAppointments = await fetchAllDigiDAppointments();
     totalAppointmentsFound = allAppointments.length;
 
     if (allAppointments.length === 0) {
-      console.log('[DIGID CHECKER] No DigiD appointments found');
+      logger.info('[DIGID CHECKER] No DigiD appointments found');
       await logJobComplete(jobId, totalAppointmentsFound, totalNewAppointments, totalNotificationsSent);
       return {
         success: true,
@@ -196,7 +197,7 @@ async function doCheckDigiD(): Promise<{
       };
     }
 
-    console.log(`[DIGID CHECKER] Found ${allAppointments.length} DigiD appointments`);
+    logger.info(`[DIGID CHECKER] Found ${allAppointments.length} DigiD appointments`);
 
     // Store appointments and get new ones
     const newAppointments = await storeAppointmentsWithSource(
@@ -206,7 +207,7 @@ async function doCheckDigiD(): Promise<{
     totalNewAppointments = newAppointments.length;
 
     if (newAppointments.length > 0) {
-      console.log(`[DIGID CHECKER] ${newAppointments.length} NEW DigiD appointments!`);
+      logger.info(`[DIGID CHECKER] ${newAppointments.length} NEW DigiD appointments!`);
 
       // Broadcast to connected WebSocket clients
       broadcastNewAppointments(newAppointments, 'DIGID');
@@ -238,18 +239,18 @@ async function doCheckDigiD(): Promise<{
 
           // Check DND hours
           if (isWithinDNDHours(pref.dnd_start_time, pref.dnd_end_time, pref.user_timezone)) {
-            console.log(`[DIGID CHECKER] Skipping notification for user ${pref.user_id} - within DND hours`);
+            logger.info(`[DIGID CHECKER] Skipping notification for user ${pref.user_id} - within DND hours`);
             continue;
           }
 
           // Check throttling (use expedited throttling for DigiD since slots go fast)
           const throttleResult = smartThrottleCheck(pref.last_notification_at, pref.notification_interval, userAppointments);
           if (!throttleResult.shouldSend) {
-            console.log(`[DIGID CHECKER] Skipping notification for user ${pref.user_id} - interval not reached`);
+            logger.info(`[DIGID CHECKER] Skipping notification for user ${pref.user_id} - interval not reached`);
             continue;
           }
 
-          console.log(`[DIGID CHECKER] Sending notification to user ${pref.user_id} with ${userAppointments.length} appointments`);
+          logger.info(`[DIGID CHECKER] Sending notification to user ${pref.user_id} with ${userAppointments.length} appointments`);
 
           // Send email notification
           if (pref.email_enabled) {
@@ -293,7 +294,7 @@ async function doCheckDigiD(): Promise<{
               totalNotificationsSent++;
               await logNotification(pref.user_id, userAppointments[0].key, 'push', true, userAppointments.length);
             } else {
-              console.log(`[DIGID CHECKER] Push notification skipped for user ${pref.user_id}: ${pushResult.error}`);
+              logger.info(`[DIGID CHECKER] Push notification skipped for user ${pref.user_id}: ${pushResult.error}`);
               await logNotification(pref.user_id, userAppointments[0].key, 'push', false, userAppointments.length, pushResult.error);
             }
           }
@@ -303,7 +304,7 @@ async function doCheckDigiD(): Promise<{
 
         } catch (error) {
           const errorMsg = `Error notifying user ${pref.user_id}: ${error instanceof Error ? error.message : 'Unknown error'}`;
-          console.error(`[DIGID CHECKER] ${errorMsg}`);
+          logger.error(`[DIGID CHECKER] ${errorMsg}`);
           errors.push(errorMsg);
         }
       }
@@ -311,10 +312,11 @@ async function doCheckDigiD(): Promise<{
 
     await logJobComplete(jobId, totalAppointmentsFound, totalNewAppointments, totalNotificationsSent);
 
-    console.log('[DIGID CHECKER] Check completed');
-    console.log(`  - Appointments found: ${totalAppointmentsFound}`);
-    console.log(`  - New appointments: ${totalNewAppointments}`);
-    console.log(`  - Notifications sent: ${totalNotificationsSent}`);
+    logger.info('[DIGID CHECKER] Check completed', {
+      appointmentsFound: totalAppointmentsFound,
+      newAppointments: totalNewAppointments,
+      notificationsSent: totalNotificationsSent
+    });
 
     return {
       success: errors.length === 0,
@@ -325,7 +327,7 @@ async function doCheckDigiD(): Promise<{
     };
   } catch (error) {
     const errorMsg = `Fatal error in DigiD checker: ${error instanceof Error ? error.message : 'Unknown error'}`;
-    console.error(`[DIGID CHECKER] ${errorMsg}`);
+    logger.error(`[DIGID CHECKER] ${errorMsg}`);
     await logJobFailed(jobId, errorMsg);
     return {
       success: false,
@@ -355,11 +357,11 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
 
   try {
     const typeFilter = filterTypes ? ` (${filterTypes.join(', ')})` : '';
-    console.log(`[APPOINTMENT CHECKER] Starting appointment check${typeFilter}...`);
+    logger.info(`[APPOINTMENT CHECKER] Starting appointment check${typeFilter}...`);
 
     // Get all active user preferences for notifications
     const preferences = await getActivePreferences();
-    console.log(`[APPOINTMENT CHECKER] Found ${preferences.length} active preferences for notifications`);
+    logger.info(`[APPOINTMENT CHECKER] Found ${preferences.length} active preferences for notifications`);
 
     // Map to collect pending notifications for each user preference
     const pendingNotifications = new Map<number, { user: PreferenceConfig; appointments: INDAppointmentWithMetadata[] }>();
@@ -376,7 +378,7 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
       );
     }
 
-    console.log(`[APPOINTMENT CHECKER] Scraping ${allCombinations.length} valid combinations${typeFilter}`);
+    logger.info(`[APPOINTMENT CHECKER] Scraping ${allCombinations.length} valid combinations${typeFilter}`);
 
     // Fetch appointments for ALL combinations with rate limiting
     for (let i = 0; i < allCombinations.length; i++) {
@@ -385,7 +387,7 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
       try {
         // Add delay every 10 requests to avoid overwhelming the API and reduce memory pressure
         if (i > 0 && i % 10 === 0) {
-          console.log(`[APPOINTMENT CHECKER] Processed ${i}/${allCombinations.length} combinations, pausing...`);
+          logger.info(`[APPOINTMENT CHECKER] Processed ${i}/${allCombinations.length} combinations, pausing...`);
           await new Promise(resolve => setTimeout(resolve, SCRAPING.IND_API_DELAY_MS));
         }
 
@@ -402,7 +404,7 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
           continue;
         }
 
-        console.log(`[APPOINTMENT CHECKER] Found ${appointments.length} appointments for ${config.appointmentType} at ${config.location} (${config.persons} persons)`);
+        logger.info(`[APPOINTMENT CHECKER] Found ${appointments.length} appointments for ${config.appointmentType} at ${config.location} (${config.persons} persons)`);
 
         // Enrich appointments with metadata
         const enriched = enrichAppointments(
@@ -417,7 +419,7 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
         totalNewAppointments += newAppointments.length;
 
         if (newAppointments.length > 0) {
-          console.log(`[APPOINTMENT CHECKER] ${newAppointments.length} NEW appointments for ${config.appointmentType} at ${config.location}`);
+          logger.info(`[APPOINTMENT CHECKER] ${newAppointments.length} NEW appointments for ${config.appointmentType} at ${config.location}`);
 
           // Broadcast to connected WebSocket clients
           broadcastNewAppointments(newAppointments, 'IND');
@@ -452,13 +454,13 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
         }
       } catch (error) {
         const errorMsg = `Error checking ${config.appointmentType} at ${config.location}: ${error instanceof Error ? error.message : 'Unknown error'}`;
-        console.error(`[APPOINTMENT CHECKER] ${errorMsg}`);
+        logger.error(`[APPOINTMENT CHECKER] ${errorMsg}`);
         errors.push(errorMsg);
       }
     }
 
     // EXPAT CENTERS SCRAPING - Scrape The Hague and Rotterdam International Centers
-    console.log('[APPOINTMENT CHECKER] Starting expat centers scraping...');
+    logger.info('[APPOINTMENT CHECKER] Starting expat centers scraping...');
 
     // The Hague International Centre - Scrape biometrics/document pickup for 1-6 persons
     try {
@@ -481,7 +483,7 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
             totalNewAppointments += newAppointments.length;
 
             if (newAppointments.length > 0) {
-              console.log(`[THE HAGUE IC] ${newAppointments.length} NEW appointments for ${type}, ${persons} person(s)`);
+              logger.info(`[THE HAGUE IC] ${newAppointments.length} NEW appointments for ${type}, ${persons} person(s)`);
 
               // Broadcast to connected WebSocket clients
               broadcastNewAppointments(newAppointments, 'THE_HAGUE_IC');
@@ -509,7 +511,7 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
         }
       }
     } catch (error) {
-      console.error('[THE HAGUE IC] Error scraping:', error);
+      logger.error('[THE HAGUE IC] Error scraping:', error);
       errors.push(`The Hague IC scraping error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
@@ -528,7 +530,7 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
         totalNewAppointments += newAppointments.length;
 
         if (newAppointments.length > 0) {
-          console.log(`[ROTTERDAM IC] ${newAppointments.length} NEW appointments`);
+          logger.info(`[ROTTERDAM IC] ${newAppointments.length} NEW appointments`);
 
           // Broadcast to connected WebSocket clients
           broadcastNewAppointments(newAppointments, 'ROTTERDAM_IC');
@@ -552,18 +554,18 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
         }
       }
     } catch (error) {
-      console.error('[ROTTERDAM IC] Error scraping:', error);
+      logger.error('[ROTTERDAM IC] Error scraping:', error);
       errors.push(`Rotterdam IC scraping error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
     // Send grouped notifications for all users who have pending appointments
-    console.log(`[APPOINTMENT CHECKER] Processing ${pendingNotifications.size} users with pending notifications...`);
+    logger.info(`[APPOINTMENT CHECKER] Processing ${pendingNotifications.size} users with pending notifications...`);
 
     for (const [preferenceId, { user, appointments }] of pendingNotifications.entries()) {
       try {
         // Check if we're in Do Not Disturb hours (using user's timezone)
         if (isWithinDNDHours(user.dnd_start_time, user.dnd_end_time, user.user_timezone)) {
-          console.log(`[APPOINTMENT CHECKER] Skipping notification for user ${user.user_id} - within DND hours (${user.dnd_start_time}-${user.dnd_end_time} ${user.user_timezone})`);
+          logger.info(`[APPOINTMENT CHECKER] Skipping notification for user ${user.user_id} - within DND hours (${user.dnd_start_time}-${user.dnd_end_time} ${user.user_timezone})`);
           continue;
         }
 
@@ -573,11 +575,11 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
           const minutesSinceLast = user.last_notification_at
             ? Math.floor((new Date().getTime() - new Date(user.last_notification_at).getTime()) / (1000 * 60))
             : 0;
-          console.log(`[APPOINTMENT CHECKER] Skipping notification for user ${user.user_id} - interval not reached (${minutesSinceLast}/${throttleResult.effectiveInterval} minutes)`);
+          logger.info(`[APPOINTMENT CHECKER] Skipping notification for user ${user.user_id} - interval not reached (${minutesSinceLast}/${throttleResult.effectiveInterval} minutes)`);
           continue;
         }
         if (throttleResult.isUrgent) {
-          console.log(`[APPOINTMENT CHECKER] URGENT: User ${user.user_id} has appointments within 2 days - using expedited throttling`);
+          logger.info(`[APPOINTMENT CHECKER] URGENT: User ${user.user_id} has appointments within 2 days - using expedited throttling`);
         }
 
         // Remove duplicates by appointment key
@@ -585,7 +587,7 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
           new Map(appointments.map(a => [a.key, a])).values()
         );
 
-        console.log(`[APPOINTMENT CHECKER] Sending grouped notification to user ${user.user_id} with ${uniqueAppointments.length} appointments`);
+        logger.info(`[APPOINTMENT CHECKER] Sending grouped notification to user ${user.user_id} with ${uniqueAppointments.length} appointments`);
 
         // Send email notification
         if (user.email_enabled) {
@@ -628,7 +630,7 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
             totalNotificationsSent++;
             await logNotification(user.user_id, uniqueAppointments[0].key, 'push', true, uniqueAppointments.length);
           } else {
-            console.log(`[APPOINTMENT CHECKER] Push notification skipped for user ${user.user_id}: ${pushResult.error}`);
+            logger.info(`[APPOINTMENT CHECKER] Push notification skipped for user ${user.user_id}: ${pushResult.error}`);
             await logNotification(user.user_id, uniqueAppointments[0].key, 'push', false, uniqueAppointments.length, pushResult.error);
           }
         }
@@ -637,7 +639,7 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
         await updateLastNotificationTime(user.id);
       } catch (error) {
         const errorMsg = `Error notifying user ${user.user_id}: ${error instanceof Error ? error.message : 'Unknown error'}`;
-        console.error(`[APPOINTMENT CHECKER] ${errorMsg}`);
+        logger.error(`[APPOINTMENT CHECKER] ${errorMsg}`);
         errors.push(errorMsg);
       }
     }
@@ -647,11 +649,12 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
 
     await logJobComplete(jobId, totalAppointmentsFound, totalNewAppointments, totalNotificationsSent);
 
-    console.log('[APPOINTMENT CHECKER] Check completed');
-    console.log(`  - Appointments found: ${totalAppointmentsFound}`);
-    console.log(`  - New appointments: ${totalNewAppointments}`);
-    console.log(`  - Notifications sent: ${totalNotificationsSent}`);
-    console.log(`  - Errors: ${errors.length}`);
+    logger.info('[APPOINTMENT CHECKER] Check completed', {
+      appointmentsFound: totalAppointmentsFound,
+      newAppointments: totalNewAppointments,
+      notificationsSent: totalNotificationsSent,
+      errors: errors.length
+    });
 
     return {
       success: errors.length === 0,
@@ -662,7 +665,7 @@ async function doCheckAndNotify(filterTypes?: string[]): Promise<{
     };
   } catch (error) {
     const errorMsg = `Fatal error in appointment checker: ${error instanceof Error ? error.message : 'Unknown error'}`;
-    console.error(`[APPOINTMENT CHECKER] ${errorMsg}`);
+    logger.error(`[APPOINTMENT CHECKER] ${errorMsg}`);
     await logJobFailed(jobId, errorMsg);
     return {
       success: false,
@@ -695,7 +698,7 @@ function validateTimezone(timezone: string | null | undefined): string {
     return normalized;
   }
 
-  console.warn(`[DND] Invalid timezone "${timezone}", using default ${DEFAULT_TIMEZONE}`);
+  logger.warn(`[DND] Invalid timezone "${timezone}", using default ${DEFAULT_TIMEZONE}`);
   return DEFAULT_TIMEZONE;
 }
 
@@ -722,7 +725,7 @@ function isWithinDNDHours(dndStartTime: string, dndEndTime: string, userTimezone
     // Fallback to server time if formatting fails (shouldn't happen with validated timezone)
     const now = new Date();
     currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    console.warn(`[DND] Timezone formatting failed for "${validTimezone}", using server time:`, error);
+    logger.warn(`[DND] Timezone formatting failed for "${validTimezone}", using server time:`, error);
   }
 
   // If start time is later than end time, DND spans midnight
@@ -891,12 +894,12 @@ async function storeAppointmentsWithSource(appointments: INDAppointmentWithMetad
     });
 
     if (newAppointments.length > 0) {
-      console.log(`[APPOINTMENT CHECKER] Inserted ${newAppointments.length} new ${source} appointments`);
+      logger.info(`[APPOINTMENT CHECKER] Inserted ${newAppointments.length} new ${source} appointments`);
     }
 
     return newAppointments;
   } catch (error) {
-    console.error(`[APPOINTMENT CHECKER] Error storing ${source} appointments:`, error);
+    logger.error(`[APPOINTMENT CHECKER] Error storing ${source} appointments:`, error);
     return [];
   }
 }
@@ -958,12 +961,12 @@ async function storeAppointments(appointments: INDAppointmentWithMetadata[]): Pr
     });
 
     if (newAppointments.length > 0) {
-      console.log(`[APPOINTMENT CHECKER] Inserted ${newAppointments.length} new appointments`);
+      logger.info(`[APPOINTMENT CHECKER] Inserted ${newAppointments.length} new appointments`);
     }
 
     return newAppointments;
   } catch (error) {
-    console.error(`[APPOINTMENT CHECKER] Error in store:`, error);
+    logger.error('[APPOINTMENT CHECKER] Error in store:', error);
     return [];
   }
 }
@@ -1006,7 +1009,7 @@ async function logNotification(
 
     await db.query(query, [userId, appointmentId, notificationType, success, errorMessage || null, appointmentCount]);
   } catch (error) {
-    console.error('[APPOINTMENT CHECKER] Error logging notification:', error);
+    logger.error('[APPOINTMENT CHECKER] Error logging notification:', { error });
   }
 }
 
@@ -1018,7 +1021,7 @@ async function logJobStart(jobName: string): Promise<number> {
   const result = await db.query(query, [jobName, 'running']);
   // SQLite better-sqlite3 returns RunResult with lastInsertRowid
   const runResult = result[0] as any;
-  console.log('[DEBUG] Insert result:', runResult);
+  logger.debug('[DEBUG] Insert result:', { runResult });
   return runResult.lastInsertRowid || runResult.lastID;
 }
 

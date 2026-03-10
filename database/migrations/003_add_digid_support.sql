@@ -7,6 +7,9 @@
 -- Note: SQLite doesn't support modifying CHECK constraints with ALTER TABLE
 -- So we create a new table and migrate data
 
+-- Step 0: Drop the view first (it references ind_appointments)
+DROP VIEW IF EXISTS active_appointments_with_preferences;
+
 -- Step 1: Create new ind_appointments table with updated constraints
 CREATE TABLE IF NOT EXISTS ind_appointments_new (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

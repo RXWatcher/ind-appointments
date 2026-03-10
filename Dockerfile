@@ -4,14 +4,14 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 
-# Install dependencies for native modules
-RUN apk add --no-cache libc6-compat
+# Install dependencies for native modules (better-sqlite3 requires build tools)
+RUN apk add --no-cache libc6-compat python3 make g++
 
 # Copy package files
 COPY package.json package-lock.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm ci && npm cache clean --force
 
 # Stage 2: Builder
 FROM node:20-alpine AS builder
@@ -48,8 +48,8 @@ COPY --from=builder /app/server.js ./server.js
 COPY --from=builder /app/database ./database
 COPY --from=builder /app/scripts ./scripts
 
-# Create data directory for SQLite database
-RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
+# Create data and logs directories
+RUN mkdir -p /app/data /app/logs && chown -R nextjs:nodejs /app/data /app/logs
 
 # Switch to non-root user
 USER nextjs

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import logger from './logger';
+import { SECURITY, RATE_LIMIT } from './constants';
 
 interface User {
   id: number;
@@ -9,22 +11,21 @@ interface User {
   role: string;
 }
 
-interface RateLimitStore {
-  [key: string]: {
-    count: number;
-    resetTime: number;
-  };
+interface RateLimitEntry {
+  count: number;
+  resetTime: number;
 }
 
 class Security {
   private static instance: Security;
-  private rateLimitStore: RateLimitStore = {};
+  private rateLimitStore: Map<string, RateLimitEntry> = new Map();
+  private cleanupInterval: NodeJS.Timeout | null = null;
   private jwtSecret: string;
   private bcryptRounds: number;
 
   private constructor() {
     const envSecret = process.env.JWT_SECRET;
-    this.bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS || '12');
+    this.bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS || String(SECURITY.BCRYPT_ROUNDS));
 
     if (!envSecret) {
       // Check if we're in Next.js build phase (collecting page data)
@@ -36,7 +37,7 @@ class Security {
       }
 
       // Development/build fallback - generate a random secret per server restart
-      this.jwtSecret = require('crypto').randomBytes(32).toString('hex');
+      this.jwtSecret = crypto.randomBytes(32).toString('hex');
 
       // Only warn in non-build contexts
       if (!isBuildPhase) {
@@ -44,6 +45,46 @@ class Security {
       }
     } else {
       this.jwtSecret = envSecret;
+    }
+
+    // Start cleanup interval for rate limit entries to prevent memory leak
+    this.startRateLimitCleanup();
+  }
+
+  /**
+   * Start periodic cleanup of expired rate limit entries
+   * This prevents memory leaks from accumulated entries
+   */
+  private startRateLimitCleanup(): void {
+    // Only start once
+    if (this.cleanupInterval) return;
+
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupExpiredRateLimits();
+    }, RATE_LIMIT.CLEANUP_INTERVAL_MS);
+
+    // Don't let this interval prevent process exit
+    if (this.cleanupInterval.unref) {
+      this.cleanupInterval.unref();
+    }
+  }
+
+  /**
+   * Clean up expired rate limit entries
+   */
+  private cleanupExpiredRateLimits(): void {
+    const now = Date.now();
+    let cleaned = 0;
+
+    for (const [key, entry] of this.rateLimitStore.entries()) {
+      if (now > entry.resetTime) {
+        this.rateLimitStore.delete(key);
+        cleaned++;
+      }
+    }
+
+    if (cleaned > 0) {
+      logger.debug(`[SECURITY] Cleaned up ${cleaned} expired rate limit entries`);
     }
   }
 
@@ -89,17 +130,17 @@ class Security {
     }
   }
 
-  // Rate limiting
-  public rateLimit(identifier: string, maxRequests: number = 100, windowMs: number = 15 * 60 * 1000): boolean {
+  // Rate limiting using Map to enable proper cleanup
+  public rateLimit(identifier: string, maxRequests: number = RATE_LIMIT.API_MAX_REQUESTS, windowMs: number = RATE_LIMIT.DEFAULT_WINDOW_MS): boolean {
     const now = Date.now();
     const resetTime = now + windowMs;
 
-    if (!this.rateLimitStore[identifier]) {
-      this.rateLimitStore[identifier] = { count: 1, resetTime };
+    const entry = this.rateLimitStore.get(identifier);
+
+    if (!entry) {
+      this.rateLimitStore.set(identifier, { count: 1, resetTime });
       return true;
     }
-
-    const entry = this.rateLimitStore[identifier];
 
     if (now > entry.resetTime) {
       entry.count = 1;
@@ -114,6 +155,50 @@ class Security {
 
     entry.count++;
     return true;
+  }
+
+  /**
+   * Get rate limit info for an identifier (for headers)
+   */
+  public getRateLimitInfo(identifier: string, maxRequests: number = RATE_LIMIT.API_MAX_REQUESTS): { remaining: number; resetTime: number } {
+    const entry = this.rateLimitStore.get(identifier);
+    const now = Date.now();
+
+    if (!entry || now > entry.resetTime) {
+      return { remaining: maxRequests, resetTime: now + RATE_LIMIT.DEFAULT_WINDOW_MS };
+    }
+
+    return {
+      remaining: Math.max(0, maxRequests - entry.count),
+      resetTime: entry.resetTime,
+    };
+  }
+
+  /**
+   * Generate a cryptographically secure random token
+   */
+  public generateSecureToken(bytes: number = SECURITY.TOKEN_BYTES): string {
+    return crypto.randomBytes(bytes).toString('hex');
+  }
+
+  /**
+   * Hash a token for secure storage (e.g., Telegram link tokens)
+   */
+  public hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
+  /**
+   * Verify a token against a hash
+   */
+  public verifyTokenHash(token: string, hash: string): boolean {
+    const tokenHash = this.hashToken(token);
+    // Use timing-safe comparison to prevent timing attacks
+    try {
+      return crypto.timingSafeEqual(Buffer.from(tokenHash), Buffer.from(hash));
+    } catch {
+      return false;
+    }
   }
 
   // Security headers - enabled by default, can be disabled for development
@@ -171,6 +256,19 @@ class Security {
 
   public sanitizeInput(input: string): string {
     return input.trim().replace(/[<>\"']/g, '');
+  }
+
+  /**
+   * Sanitize HTML to prevent XSS attacks
+   * Escapes HTML entities
+   */
+  public sanitize(input: string): string {
+    return input
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   // Generate a signed token for sensitive operations like unsubscribe

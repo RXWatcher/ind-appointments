@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { db } from '@/lib/database';
 import { rateLimit } from '@/lib/rate-limit';
 import { security } from '@/lib/security';
+import logger from '@/lib/logger';
+import type { UserRow } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,10 +43,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = users[0] as any;
+    const user = users[0] as UserRow;
 
-    // Verify password
-    const passwordMatch = await bcrypt.compare(password, user.password_hash);
+    // Verify password using centralized security module
+    const passwordMatch = await security.comparePassword(password, user.password_hash);
 
     if (!passwordMatch) {
       return NextResponse.json(
@@ -67,16 +67,11 @@ export async function POST(request: NextRequest) {
     await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
 
     // Generate JWT token using centralized security module
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role
-      },
-      security.getJwtSecret(),
-      { expiresIn: '24h' }
-    );
+    const token = security.generateToken({
+      id: user.id,
+      email: user.email,
+      role: user.role
+    });
 
     return NextResponse.json({
       success: true,
@@ -92,7 +87,7 @@ export async function POST(request: NextRequest) {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error', { error });
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }

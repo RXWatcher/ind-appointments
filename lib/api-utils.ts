@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { security } from './security';
 import logger from './logger';
+import { ValidationError } from './validation';
+import type { z } from 'zod';
 
 export interface ApiError {
   message: string;
@@ -73,7 +75,15 @@ export class ApiHandler {
         return this.error(error);
       }
 
-      logger.error('Unhandled API error', { error });
+      if (error instanceof ValidationError) {
+        return this.error(error.message, 400);
+      }
+
+      // Log unexpected errors
+      logger.error('Unhandled API error', {
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
 
       return this.error(
         process.env.NODE_ENV === 'production'
@@ -142,6 +152,67 @@ export class ApiHandler {
         400
       );
     }
+  }
+
+  /**
+   * Parse and validate request body using a Zod schema
+   */
+  public static async parseBodyWithSchema<T extends z.ZodSchema>(
+    request: NextRequest,
+    schema: T
+  ): Promise<z.infer<T>> {
+    const body = await this.parseBody(request);
+    const result = schema.safeParse(body);
+
+    if (!result.success) {
+      const errors = result.error.errors
+        .map(e => `${e.path.join('.')}: ${e.message}`)
+        .join(', ');
+      throw new ApiException(errors, 400, 'VALIDATION_ERROR');
+    }
+
+    return result.data;
+  }
+
+  /**
+   * Parse query parameters using a Zod schema
+   */
+  public static parseQueryWithSchema<T extends z.ZodSchema>(
+    request: NextRequest,
+    schema: T
+  ): z.infer<T> {
+    const params: Record<string, string> = {};
+    request.nextUrl.searchParams.forEach((value, key) => {
+      params[key] = value;
+    });
+
+    const result = schema.safeParse(params);
+
+    if (!result.success) {
+      const errors = result.error.errors
+        .map(e => `${e.path.join('.')}: ${e.message}`)
+        .join(', ');
+      throw new ApiException(errors, 400, 'VALIDATION_ERROR');
+    }
+
+    return result.data;
+  }
+
+  /**
+   * Get user from request headers (set by middleware)
+   */
+  public static getUserFromHeaders(request: NextRequest): { id: number; role: string } | null {
+    const userId = request.headers.get('x-user-id');
+    const userRole = request.headers.get('x-user-role');
+
+    if (!userId || !userRole) {
+      return null;
+    }
+
+    return {
+      id: parseInt(userId, 10),
+      role: userRole,
+    };
   }
 }
 

@@ -12,7 +12,22 @@ services:
     environment:
       - NODE_ENV=production
       - JWT_SECRET=${JWT_SECRET}
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - BASE_URL=${BASE_URL:-http://localhost:3000}
+      # SMTP Configuration
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - FROM_EMAIL=${FROM_EMAIL:-noreply@indappointments.com}
+      - FROM_NAME=${FROM_NAME:-IND Appointments}
+      # Optional: Telegram
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET:-}
+      # Optional: Pushover
+      - PUSHOVER_API_TOKEN=${PUSHOVER_API_TOKEN:-}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       # Persist SQLite database
       - ./data:/app/data
