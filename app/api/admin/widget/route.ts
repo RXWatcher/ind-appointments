@@ -1,24 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
+import { verifyAuth } from '@/lib/security';
 import { db } from '@/lib/database';
-
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET environment variable is required');
-}
 
 // GET - Fetch all content settings
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const user = await verifyAuth(request);
+    if (!user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
-    const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-
-    if (decoded.role !== 'admin') {
+    if (user.role !== 'admin') {
       return NextResponse.json({ success: false, message: 'Admin access required' }, { status: 403 });
     }
 
@@ -50,15 +42,12 @@ export async function GET(request: NextRequest) {
 // POST - Update content settings
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const user = await verifyAuth(request);
+    if (!user) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
-    const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-
-    if (decoded.role !== 'admin') {
+    if (user.role !== 'admin') {
       return NextResponse.json({ success: false, message: 'Admin access required' }, { status: 403 });
     }
 
