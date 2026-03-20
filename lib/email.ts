@@ -41,7 +41,7 @@ export async function getSmtpSettings() {
     smtp_secure: process.env.SMTP_SECURE === 'true',
     smtp_user: process.env.SMTP_USER || '',
     smtp_password: process.env.SMTP_PASSWORD || '',
-    from_email: process.env.FROM_EMAIL || 'noreply@indappointments.com',
+    from_email: process.env.FROM_EMAIL || 'noreply@example.com',
     from_name: process.env.FROM_NAME || 'IND Appointments',
     base_url: process.env.BASE_URL || 'http://localhost:3000'
   };

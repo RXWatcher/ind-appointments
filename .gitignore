@@ -51,3 +51,12 @@ Thumbs.db
 # Logs
 logs/
 *.log
+
+# SSH keys (should never be in a repo)
+.ssh/
+
+# Database backups
+backups/
+
+# Data directory
+data/

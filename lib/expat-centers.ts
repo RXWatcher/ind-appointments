@@ -161,13 +161,18 @@ function parseTheHagueICHTML(html: string, appointmentType: string, personCount:
  * Fetches appointments from Rotterdam International Center (TIMEBLOCKR API)
  */
 export async function fetchRotterdamICAppointments(
-  productId: string = 'c55990c4-2785-4995-995c-ab907c5afdc2' // IND: Providing biometrics
+  productId: string = process.env.TIMEBLOCKR_PRODUCT_ID || '' // IND: Providing biometrics
 ): Promise<INDAppointment[]> {
   try {
     console.log(`[ROTTERDAM IC] Fetching appointments for product: ${productId}`);
 
-    const apiKey = 'f881c6b5d5964b169739ce560e66a25f';
-    const apiBase = 'https://10338.api.timeblockr.cloud/v2';
+    const apiKey = process.env.TIMEBLOCKR_API_KEY || '';
+    const apiBase = process.env.TIMEBLOCKR_API_BASE || 'https://10338.api.timeblockr.cloud/v2';
+
+    if (!apiKey) {
+      console.warn('[ROTTERDAM IC] TIMEBLOCKR_API_KEY not set, skipping');
+      return [];
+    }
 
     // Step 1: Get available resource items (IND service providers)
     const resourcesUrl = `${apiBase}/resourceitems?locationfilter=${productId}&attendanceType=1&full=false`;
