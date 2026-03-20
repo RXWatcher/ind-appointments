@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { APPOINTMENT_TYPES, LOCATIONS } from '@/lib/appointment-data';
@@ -42,16 +42,6 @@ export default function PreferencesPage() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) { router.push('/login'); return; }
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      setUser(payload);
-      fetchPreferences(token);
-    } catch { router.push('/login'); }
-  }, [router]);
-
   const fetchPreferences = async (token: string) => {
     try {
       const res = await fetch('/api/preferences', { headers: { Authorization: `Bearer ${token}` } });
@@ -60,6 +50,18 @@ export default function PreferencesPage() {
     } catch (e) { console.error('Error:', e); }
     setLoading(false);
   };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) { router.push('/login'); return; }
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      startTransition(() => {
+        setUser(payload);
+        fetchPreferences(token);
+      });
+    } catch { router.push('/login'); }
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -288,7 +290,7 @@ export default function PreferencesPage() {
             <div className="glass-card p-8 text-center text-gray-500 dark:text-gray-400">
               <p className="text-lg mb-1">🔕</p>
               <p className="text-sm">No alerts set up yet.</p>
-              <p className="text-xs mt-1">Click "Add New Alert" to get started!</p>
+              <p className="text-xs mt-1">Click &quot;Add New Alert&quot; to get started!</p>
             </div>
           ) : (
             preferences.map(pref => (

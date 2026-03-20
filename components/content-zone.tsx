@@ -31,17 +31,6 @@ export function ContentZone({ zone, className = '' }: ContentZoneProps) {
   const [mounted, setMounted] = useState(false);
   const [randomClass] = useState(() => `w-${getRandomSuffix()}`);
 
-  // Lazy loading: only fetch when component mounts
-  useEffect(() => {
-    setMounted(true);
-    // Slight delay to avoid blocking initial page render
-    const timer = setTimeout(() => {
-      fetchContentSettings();
-    }, 100);
-
-    return () => clearTimeout(timer);
-  }, [zone]);
-
   const fetchContentSettings = async () => {
     try {
       const response = await fetch('/api/widget');
@@ -67,6 +56,17 @@ export function ContentZone({ zone, className = '' }: ContentZoneProps) {
     }
     setLoading(false);
   };
+
+  // Lazy loading: only fetch when component mounts
+  useEffect(() => {
+    // Slight delay to avoid blocking initial page render
+    const timer = setTimeout(() => {
+      setMounted(true);
+      fetchContentSettings();
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [zone]);
 
   // Don't render anything if not mounted, disabled, loading, or no HTML is set
   if (!mounted || loading || !isEnabled || !contentHtml) {

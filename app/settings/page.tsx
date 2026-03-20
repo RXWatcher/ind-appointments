@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, Suspense, startTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -13,7 +13,14 @@ interface NotificationCredentials {
 function SettingsForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<any>(() => {
+    if (typeof window === 'undefined') return null;
+    const token = localStorage.getItem('token');
+    if (token) {
+      try { return JSON.parse(atob(token.split('.')[1])); } catch {}
+    }
+    return null;
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState<NotificationCredentials>({});
@@ -28,56 +35,6 @@ function SettingsForm() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [changingEmail, setChangingEmail] = useState(false);
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      setUser(payload);
-      fetchCredentials(token);
-      fetchTimezone(token);
-
-      // Get available timezones
-      try {
-        const tzList = Intl.supportedValuesOf('timeZone');
-        setTimezones(tzList);
-      } catch (e) {
-        // Fallback for older browsers
-        setTimezones(['Europe/Amsterdam', 'America/New_York', 'Asia/Tokyo', 'Australia/Sydney']);
-      }
-    } catch (e) {
-      router.push('/login');
-    }
-  }, [router]);
-
-  useEffect(() => {
-    // Check for email change messages in URL
-    const messageParam = searchParams.get('message');
-    const errorParam = searchParams.get('error');
-
-    if (messageParam === 'email_changed') {
-      setMessage({ type: 'success', text: '✅ Email changed successfully! You can now log in with your new email address.' });
-      // Clear URL parameters
-      router.replace('/settings');
-    } else if (errorParam === 'invalid_token') {
-      setMessage({ type: 'error', text: 'Invalid or expired email change link. Please request a new one.' });
-      router.replace('/settings');
-    } else if (errorParam === 'token_expired') {
-      setMessage({ type: 'error', text: 'Email change link expired. Please request a new one.' });
-      router.replace('/settings');
-    } else if (errorParam === 'email_taken') {
-      setMessage({ type: 'error', text: 'The requested email address is already in use.' });
-      router.replace('/settings');
-    } else if (errorParam === 'verification_failed') {
-      setMessage({ type: 'error', text: 'Email change verification failed. Please try again.' });
-      router.replace('/settings');
-    }
-  }, [searchParams, router]);
 
   const fetchCredentials = async (token: string) => {
     try {
@@ -107,6 +64,71 @@ function SettingsForm() {
       console.error('Error fetching timezone:', error);
     }
   };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    try {
+      JSON.parse(atob(token.split('.')[1])); // validate token
+    } catch (e) {
+      router.push('/login');
+      return;
+    }
+
+    // Defer data fetching and timezone detection to avoid synchronous setState in effect
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      // Get available timezones
+      try {
+        const tzList = Intl.supportedValuesOf('timeZone');
+        setTimezones(tzList);
+      } catch (e) {
+        // Fallback for older browsers
+        setTimezones(['Europe/Amsterdam', 'America/New_York', 'Asia/Tokyo', 'Australia/Sydney']);
+      }
+
+      fetchCredentials(token);
+      fetchTimezone(token);
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [router]);
+
+  useEffect(() => {
+    // Check for email change messages in URL
+    const messageParam = searchParams.get('message');
+    const errorParam = searchParams.get('error');
+
+    let newMessage: { type: 'success' | 'error'; text: string } | null = null;
+
+    if (messageParam === 'email_changed') {
+      newMessage = { type: 'success', text: '✅ Email changed successfully! You can now log in with your new email address.' };
+    } else if (errorParam === 'invalid_token') {
+      newMessage = { type: 'error', text: 'Invalid or expired email change link. Please request a new one.' };
+    } else if (errorParam === 'token_expired') {
+      newMessage = { type: 'error', text: 'Email change link expired. Please request a new one.' };
+    } else if (errorParam === 'email_taken') {
+      newMessage = { type: 'error', text: 'The requested email address is already in use.' };
+    } else if (errorParam === 'verification_failed') {
+      newMessage = { type: 'error', text: 'Email change verification failed. Please try again.' };
+    }
+
+    if (newMessage) {
+      // Defer setState to avoid synchronous setState in effect
+      const timer = setTimeout(() => {
+        setMessage(newMessage);
+        router.replace('/settings');
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [searchParams, router]);
 
   const handleSave = async () => {
     setSaving(true);

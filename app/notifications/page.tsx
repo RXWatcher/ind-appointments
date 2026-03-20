@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -27,16 +27,6 @@ export default function NotificationsPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-
-    fetchNotifications(token, page);
-  }, [router, page]);
-
   const fetchNotifications = async (token: string, pageNum: number) => {
     setLoading(true);
     try {
@@ -53,6 +43,18 @@ export default function NotificationsPage() {
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    startTransition(() => {
+      fetchNotifications(token, page);
+    });
+  }, [router, page]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-GB', {

@@ -66,6 +66,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const isDisconnectingRef = useRef(false);
+  const connectRef = useRef<() => void>(() => {});
 
   // Clear all timers
   const clearTimers = useCallback(() => {
@@ -209,7 +210,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             `[WS] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`
           );
 
-          reconnectTimeoutRef.current = setTimeout(connect, delay);
+          reconnectTimeoutRef.current = setTimeout(() => connectRef.current(), delay);
         } else if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
           console.log('[WS] Max reconnect attempts reached');
         }
@@ -222,6 +223,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       console.error('[WS] Connection error:', error);
     }
   }, [onMessage, onNewAppointments, onConnectionChange, autoReconnect, clearTimers, startHeartbeat]);
+
+  // Keep connectRef in sync with latest connect function
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   // Disconnect from WebSocket server
   const disconnect = useCallback(() => {

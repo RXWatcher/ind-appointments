@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, startTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -20,17 +20,27 @@ function LoginForm() {
     const message = searchParams.get('message');
     const errorParam = searchParams.get('error');
 
+    let nextSuccess = '';
+    let nextError = '';
+    let nextShowResend = false;
+
     if (message === 'email_verified') {
-      setSuccess('✅ Email verified successfully! You can now log in.');
+      nextSuccess = '✅ Email verified successfully! You can now log in.';
     } else if (message === 'already_verified') {
-      setSuccess('Your email is already verified. You can log in.');
+      nextSuccess = 'Your email is already verified. You can log in.';
     } else if (errorParam === 'invalid_token') {
-      setError('Invalid or expired verification link. Please request a new one.');
-      setShowResendVerification(true);
+      nextError = 'Invalid or expired verification link. Please request a new one.';
+      nextShowResend = true;
     } else if (errorParam === 'verification_failed') {
-      setError('Email verification failed. Please try again or contact support.');
-      setShowResendVerification(true);
+      nextError = 'Email verification failed. Please try again or contact support.';
+      nextShowResend = true;
     }
+
+    startTransition(() => {
+      setSuccess(nextSuccess);
+      setError(nextError);
+      setShowResendVerification(nextShowResend);
+    });
   }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -196,7 +206,7 @@ function LoginForm() {
           </form>
 
           <div className="mt-6 text-center text-sm">
-            <span className="text-gray-600 dark:text-gray-400">Don't have an account? </span>
+            <span className="text-gray-600 dark:text-gray-400">Don&apos;t have an account? </span>
             <Link href="/signup" className="text-blue-600 hover:text-blue-700 font-medium">
               Sign up
             </Link>

@@ -161,7 +161,7 @@ function BookHelperContent() {
                   5
                 </div>
                 <div>
-                  <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">Click "To details ›"</h3>
+                  <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">Click &quot;To details &rsaquo;&quot;</h3>
                   <p className="text-gray-600 dark:text-gray-400">Proceed to the personal details form</p>
                 </div>
               </div>

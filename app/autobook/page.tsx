@@ -63,7 +63,7 @@ function AutoBookContent() {
     }
   };
 
-  const CopyableValue = ({ label, value, valueKey }: { label: string; value: string; valueKey: string }) => (
+  const copyableValue = (value: string, valueKey: string) => (
     <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-2.5 mt-2">
       <code className="flex-1 font-mono text-blue-900 dark:text-blue-100 text-sm font-semibold break-all">{value}</code>
       <button onClick={() => copyValue(valueKey, value)}
@@ -165,7 +165,7 @@ function AutoBookContent() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-sm text-gray-900 dark:text-gray-100">Select Location</h3>
-                  <CopyableValue label="Location" value={locationName} valueKey="location" />
+                  {copyableValue(locationName, "location")}
                   {currentStep === 1 && <button onClick={() => setCurrentStep(2)} className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium">Done → Next step</button>}
                 </div>
               </div>
@@ -211,7 +211,7 @@ function AutoBookContent() {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-sm text-gray-900 dark:text-gray-100">Select Time</h3>
-                  <CopyableValue label="Time" value={`${startTime} - ${endTime}`} valueKey="time" />
+                  {copyableValue(`${startTime} - ${endTime}`, "time")}
                   <p className="text-[11px] text-yellow-700 dark:text-yellow-400 mt-1">⚠️ If unavailable, pick any slot</p>
                   {currentStep === 5 && <button onClick={() => setCurrentStep(6)} className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium">Done → Next step</button>}
                 </div>
@@ -224,7 +224,7 @@ function AutoBookContent() {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-sm text-gray-900 dark:text-gray-100">Complete Booking</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Click "To details ›" and fill in your information</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Click &quot;To details &rsaquo;&quot; and fill in your information</p>
                 </div>
               </div>
             </div>

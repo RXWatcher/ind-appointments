@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -32,26 +32,6 @@ export default function AdminUsersPage() {
   const [selectedUsers, setSelectedUsers] = useState<Set<number>>(new Set());
   const [bulkActionInProgress, setBulkActionInProgress] = useState(false);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      if (payload.role !== 'admin') {
-        router.push('/');
-        return;
-      }
-      setUser(payload);
-      fetchUsers(token);
-    } catch (e) {
-      router.push('/login');
-    }
-  }, [router]);
-
   const fetchUsers = async (token: string) => {
     try {
       const response = await fetch('/api/admin/users', {
@@ -66,6 +46,28 @@ export default function AdminUsersPage() {
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.role !== 'admin') {
+        router.push('/');
+        return;
+      }
+      startTransition(() => {
+        setUser(payload);
+        fetchUsers(token);
+      });
+    } catch (e) {
+      router.push('/login');
+    }
+  }, [router]);
 
   const fetchUserPreferences = async (userId: number) => {
     const token = localStorage.getItem('token');

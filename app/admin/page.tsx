@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -35,17 +35,6 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) { router.push('/login'); return; }
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      if (payload.role !== 'admin') { router.push('/'); return; }
-      setUser(payload);
-      fetchAdminStats(token);
-    } catch { router.push('/login'); }
-  }, [router]);
-
   const fetchAdminStats = async (token: string) => {
     try {
       const res = await fetch('/api/admin/stats', { headers: { Authorization: `Bearer ${token}` } });
@@ -54,6 +43,19 @@ export default function AdminPage() {
     } catch (e) { console.error(e); }
     setLoading(false);
   };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) { router.push('/login'); return; }
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.role !== 'admin') { router.push('/'); return; }
+      startTransition(() => {
+        setUser(payload);
+        fetchAdminStats(token);
+      });
+    } catch { router.push('/login'); }
+  }, [router]);
 
   const handleTriggerScraper = async () => {
     setTriggering(true);

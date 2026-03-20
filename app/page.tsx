@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useEffect, useState, useCallback, Suspense, startTransition } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { APPOINTMENT_TYPES, LOCATIONS } from '@/lib/appointment-data';
@@ -50,7 +50,14 @@ function HomePageContent() {
     location: searchParams.get('location') || '',
     persons: searchParams.get('persons') || ''
   });
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<any>(() => {
+    if (typeof window === 'undefined') return null;
+    const token = localStorage.getItem('token');
+    if (token) {
+      try { return JSON.parse(atob(token.split('.')[1])); } catch {}
+    }
+    return null;
+  });
   const [totalAppointments, setTotalAppointments] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [lastCheck, setLastCheck] = useState<string | null>(null);
@@ -85,14 +92,9 @@ function HomePageContent() {
   const { isConnected } = useWebSocket({ onNewAppointments: handleNewAppointments });
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      try { setUser(JSON.parse(atob(token.split('.')[1]))); } catch {}
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchAppointments();
+    startTransition(() => {
+      fetchAppointments();
+    });
     const params = new URLSearchParams();
     if (filter.type) params.set('type', filter.type);
     if (filter.location) params.set('location', filter.location);

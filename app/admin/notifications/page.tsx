@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -33,26 +33,6 @@ export default function AdminNotificationsPage() {
   const [testEmail, setTestEmail] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      if (payload.role !== 'admin') {
-        router.push('/');
-        return;
-      }
-      setUser(payload);
-      fetchSettings(token);
-    } catch (e) {
-      router.push('/login');
-    }
-  }, [router]);
-
   const fetchSettings = async (token: string) => {
     try {
       const response = await fetch('/api/admin/notifications/settings', {
@@ -67,6 +47,28 @@ export default function AdminNotificationsPage() {
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.role !== 'admin') {
+        router.push('/');
+        return;
+      }
+      startTransition(() => {
+        setUser(payload);
+        fetchSettings(token);
+      });
+    } catch (e) {
+      router.push('/login');
+    }
+  }, [router]);
 
   const handleSave = async () => {
     setSaving(true);

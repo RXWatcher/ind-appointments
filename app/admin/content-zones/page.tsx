@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -22,26 +22,6 @@ export default function AdminContentZonesPage() {
   const [settings, setSettings] = useState<ContentSettings>({});
   const [previewZone, setPreviewZone] = useState<'ad_header_html' | 'ad_sidebar_html' | 'ad_footer_html' | 'ad_between_appointments_html' | null>(null);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      if (payload.role !== 'admin') {
-        router.push('/');
-        return;
-      }
-      setUser(payload);
-      fetchSettings(token);
-    } catch (e) {
-      router.push('/login');
-    }
-  }, [router]);
-
   const fetchSettings = async (token: string) => {
     try {
       const response = await fetch('/api/admin/widget', {
@@ -56,6 +36,28 @@ export default function AdminContentZonesPage() {
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.role !== 'admin') {
+        router.push('/');
+        return;
+      }
+      startTransition(() => {
+        setUser(payload);
+        fetchSettings(token);
+      });
+    } catch (e) {
+      router.push('/login');
+    }
+  }, [router]);
 
   const handleSave = async () => {
     setSaving(true);
