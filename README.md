@@ -71,7 +71,7 @@ A comprehensive Next.js application that tracks available IND (Immigration and N
 ## 🛠 Tech Stack
 
 ### Frontend
-- **Next.js 15** with App Router
+- **Next.js 16** with App Router
 - **React 19** with Server Components
 - **TailwindCSS 4** for styling
 - **next-themes** for dark mode
@@ -567,7 +567,7 @@ For issues and questions:
 
 ## 🙏 Acknowledgments
 
-- Built with Next.js 15 and React 19
+- Built with Next.js 16 and React 19
 - Uses Better-SQLite3 for embedded database
 - Booking automation powered by Playwright
 - Push notifications via Pushover
